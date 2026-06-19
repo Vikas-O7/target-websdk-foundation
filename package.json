@@ -1,0 +1,62 @@
+{
+  "name": "target-websdk-foundation",
+  "version": "1.0.0",
+  "description": "MCP server that bootstraps a complete Adobe Target Web SDK implementation — datastream, Tags property, Web SDK extension, data elements, rules, and dev library — in a single tool call.",
+  "type": "module",
+  "main": "build/index.js",
+  "bin": {
+    "target-websdk-foundation": "./build/index.js"
+  },
+  "files": [
+    "build",
+    "README.md",
+    "LICENSE",
+    ".env.example"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node build/index.js",
+    "test": "tsx --test tests/*.test.ts",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "adobe",
+    "adobe-target",
+    "target",
+    "web-sdk",
+    "alloy",
+    "tags",
+    "launch",
+    "data-collection",
+    "datastream",
+    "claude",
+    "ai-tools"
+  ],
+  "author": "Vikas-O7 <https://github.com/Vikas-O7>",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/Vikas-O7/target-websdk-foundation#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vikas-O7/target-websdk-foundation.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Vikas-O7/target-websdk-foundation/issues"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "dotenv": "^16.5.0",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.3",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3"
+  }
+}
