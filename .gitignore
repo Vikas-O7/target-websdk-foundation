@@ -8,6 +8,8 @@ dist/
 
 # Secrets — NEVER commit
 .env
+.env.test
+.env.*.test
 .env.local
 .env.*.local
 

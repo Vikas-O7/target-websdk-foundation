@@ -31,8 +31,10 @@ import { registerSetupTools } from "./tools/setup-tools.js";
 import { registerLibraryTools } from "./tools/library-tools.js";
 import { registerValidationTools } from "./tools/validation-tools.js";
 import { registerOrchestrationTools } from "./tools/orchestration-tools.js";
+import { registerDiscoveryTools } from "./tools/discovery-tools.js";
+import { registerArchetypeTools } from "./tools/archetype-tools.js";
 
-const VERSION = "1.0.0";
+const VERSION = "1.1.0";
 
 const server = new McpServer({
   name: "target-websdk-foundation",
@@ -44,13 +46,15 @@ registerSetupTools(server);
 registerLibraryTools(server);
 registerValidationTools(server);
 registerOrchestrationTools(server);
+registerDiscoveryTools(server);
+registerArchetypeTools(server);
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
 
 console.error("═══════════════════════════════════════════════════════");
 console.error(`  Target Web SDK Foundation v${VERSION}`);
-console.error("  20 tools registered across 5 tool groups");
+console.error("  22 tools registered across 7 tool groups");
 console.error("  Transport: stdio");
 console.error("  Maintained by Vikas-O7");
 console.error("  https://github.com/Vikas-O7/target-websdk-foundation");
