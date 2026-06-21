@@ -671,7 +671,10 @@ export async function createStandardRules(
           "XDM - Page View",
           "Target - Profile Attributes",
           "Target - mbox3rdPartyId",
-          input.renderDecisions ?? true
+          input.renderDecisions ?? true,
+          // v1.1: reference the Send Event Data wrapper DE so profile
+          // params + mbox3rdPartyId reach Target via the alloy data block.
+          "Target - Send Event Data"
         ),
         name: "Send Page View Event",
       })

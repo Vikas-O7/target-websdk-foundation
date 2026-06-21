@@ -311,6 +311,104 @@ export async function validateTagsProperty(
     });
   }
 
+  // v1.1: prehiding scope hygiene check on the Web SDK extension settings.
+  // Whole-body prehiding is the #1 cited reason marketing teams disable
+  // Target — users see a blank page during Edge response time.
+  if (websdk) {
+    const settingsRaw = (websdk.attributes as { settings?: string }).settings;
+    if (typeof settingsRaw === "string" && settingsRaw.length > 0) {
+      try {
+        const parsed = JSON.parse(settingsRaw);
+        const prehidingStyle: string =
+          parsed?.instances?.[0]?.prehidingStyle ?? "";
+        const isWholeBody = /^body\s*\{/.test(prehidingStyle.trim());
+        if (isWholeBody) {
+          checks.push({
+            check: "Prehiding scope",
+            status: "warn",
+            detail:
+              "Prehiding hides the whole <body>. Best practice: scope to specific containers via flickerSelectors (e.g. ['#hero', '.product-card']). Whole-body prehiding shows users a blank page during Edge response time.",
+            severity: "warn",
+          });
+        } else if (prehidingStyle) {
+          checks.push({
+            check: "Prehiding scope",
+            status: "pass",
+            detail: `Prehiding scoped: ${prehidingStyle.slice(0, 100)}`,
+            severity: "info",
+          });
+        }
+
+        // v1.1: consent mode check.
+        const consentMode = parsed?.instances?.[0]?.defaultConsent;
+        if (consentMode === "in") {
+          checks.push({
+            check: "Consent mode",
+            status: "warn",
+            detail:
+              "defaultConsent='in' — SDK fires Target calls immediately without waiting for consent. For EU/UK GDPR compliance, use consentMode='pending' and wire your CMP to dispatch consent grant.",
+            severity: "warn",
+          });
+        } else if (consentMode === "pending") {
+          checks.push({
+            check: "Consent mode",
+            status: "pass",
+            detail:
+              "defaultConsent='pending' — SDK waits for explicit consent. Confirm a Set Consent rule is wired to your CMP's consent-granted event.",
+            severity: "info",
+          });
+        }
+      } catch {
+        /* parse failures are non-fatal for v1.1 checks */
+      }
+    }
+  }
+
+  // v1.1: Page-Type DE check (single most-targeted-against attribute).
+  const pageTypeDe = dataElements.find(
+    (d) => (d.attributes as { name?: string }).name === "Page - Type"
+  );
+  if (pageTypeDe) {
+    checks.push({
+      check: "Page-Type data element",
+      status: "pass",
+      detail: "Found: Page - Type",
+      severity: "info",
+    });
+  } else {
+    checks.push({
+      check: "Page-Type data element",
+      status: "warn",
+      detail:
+        "No 'Page - Type' data element. This is the single most-targeted-against attribute in real audiences; without it, audience authors do brittle URL regex per-audience. Re-run setup_target_websdk to add it.",
+      severity: "info",
+    });
+  }
+
+  // v1.1: Send Event Data wrapper DE check.
+  // Without this, profile attributes + mbox3rdPartyId silently don't reach
+  // Target — profile-based audience targeting fails open.
+  const sendEventDataDe = dataElements.find(
+    (d) =>
+      (d.attributes as { name?: string }).name === "Target - Send Event Data"
+  );
+  if (sendEventDataDe) {
+    checks.push({
+      check: "Profile data wrapper DE",
+      status: "pass",
+      detail: "Found: Target - Send Event Data",
+      severity: "info",
+    });
+  } else {
+    checks.push({
+      check: "Profile data wrapper DE",
+      status: "warn",
+      detail:
+        "No 'Target - Send Event Data' wrapper DE found. Without it, profile params and mbox3rdPartyId silently don't reach Target. Profile-based audience targeting will not work. Re-run setup_target_websdk.",
+      severity: "warn",
+    });
+  }
+
   // XDM DE
   const xdmDe = dataElements.find((d) =>
     /xdm/i.test((d.attributes as { name?: string }).name ?? "")

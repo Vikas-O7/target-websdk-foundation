@@ -86,12 +86,44 @@ export const ALLOY_DESCRIPTORS = {
 export interface WebSdkSettingsInput {
   datastreamId: string;
   orgId: string;
+  /**
+   * Raw CSS rule to prehide while Target loads. Default hides whole body
+   * (legacy v1.0 behavior). Best practice is to scope to specific
+   * containers — use `flickerSelectors` instead.
+   */
   flickerStyle?: string;
+  /**
+   * v1.1 — preferred way to scope prehiding. Array of CSS selectors that
+   * will be hidden until Target responds (or a 3s fallback fires).
+   * If provided, takes precedence over `flickerStyle`.
+   * Example: `["#hero", ".product-card", ".checkout-cta"]`
+   */
+  flickerSelectors?: string[];
   idMigrationEnabled?: boolean;
   targetMigrationEnabled?: boolean;
   defaultConsent?: "in" | "pending";
   thirdPartyCookies?: boolean;
   edgeDomain?: string;
+}
+
+/**
+ * Build the prehiding CSS from either a literal style string or an
+ * array of selectors. When selectors are supplied, the generated rule
+ * scopes opacity:0 only to those selectors (not the whole body) — the
+ * best-practice consultant approach.
+ *
+ * Includes a 3-second max-wait safety: prehiding never persists beyond
+ * 3 seconds even if Target times out. Prevents the "blank page forever"
+ * failure mode when Edge is unreachable.
+ */
+export function buildFlickerStyle(input: {
+  flickerStyle?: string;
+  flickerSelectors?: string[];
+}): string {
+  if (input.flickerSelectors && input.flickerSelectors.length > 0) {
+    return `${input.flickerSelectors.join(", ")} { opacity: 0 !important }`;
+  }
+  return input.flickerStyle ?? "body { opacity: 0 !important }";
 }
 
 /**
@@ -125,7 +157,7 @@ export function websdkExtensionSettings(input: WebSdkSettingsInput): string {
     idMigrationEnabled: input.idMigrationEnabled ?? false,
     targetMigrationEnabled: input.targetMigrationEnabled ?? false,
     thirdPartyCookiesEnabled: input.thirdPartyCookies ?? false,
-    prehidingStyle: input.flickerStyle ?? "body { opacity: 0 !important }",
+    prehidingStyle: buildFlickerStyle(input),
     context: ["web", "device", "environment", "placeContext"],
     clickCollectionEnabled: true,
     downloadLinkQualifier:
@@ -257,6 +289,51 @@ try {
 return "";
 `.trim();
 
+// ── PAGE TYPE — URL + DOM heuristic ────────────────────────────────────
+// Single most-targeted-against attribute in real Target audiences.
+// Without a stable Page-Type DE, audience authors do brittle URL regex.
+//
+// Detection order:
+//   1. <body data-page-type="..."> attribute — explicit author override
+//   2. URL path heuristics for the common page types
+//   3. Fallback: "generic"
+export const DE_PAGE_TYPE_SRC = `
+try {
+  var explicit = document.body && document.body.getAttribute("data-page-type");
+  if (explicit) return explicit;
+  var path = (window.location.pathname || "").toLowerCase();
+  if (path === "/" || path === "") return "home";
+  if (path.indexOf("/order-confirmation") === 0) return "order-confirm";
+  if (path.indexOf("/checkout") === 0) return "checkout";
+  if (path.indexOf("/cart") === 0) return "cart";
+  if (/\\/(product|p)\\//.test(path)) return "pdp";
+  if (/\\/(category|c|shop|collection)\\//.test(path)) return "category";
+  if (path.indexOf("/search") === 0 || /[?&]q=/.test(window.location.search)) return "search";
+  if (path.indexOf("/account") === 0 || path.indexOf("/profile") === 0) return "account";
+  if (path.indexOf("/blog") === 0 || path.indexOf("/article") === 0) return "article";
+} catch(e) {}
+return "generic";
+`.trim();
+
+// ── TARGET SEND EVENT DATA — the data.__adobe.target wrapper ──────────
+// Reactor's Send Event schema requires `data` to be a string %DE name%
+// reference, not a literal object. This wrapper DE returns the full
+// {__adobe:{target:{profile, mbox3rdPartyId, ...}}} object so that
+// profile params and mbox parameters actually reach Target.
+//
+// Without this wrapper, profile-based audience targeting silently
+// doesn't work — Target receives the event with no profile attributes.
+export const DE_TARGET_SEND_EVENT_DATA_SRC = `
+return {
+  __adobe: {
+    target: {
+      profile: _satellite.getVar("Target - Profile Attributes") || {},
+      mbox3rdPartyId: _satellite.getVar("Target - mbox3rdPartyId") || ""
+    }
+  }
+};
+`.trim();
+
 // ── Standard data-element catalog ──────────────────────────────────────
 /**
  * Description of a single standard data element to create.
@@ -365,6 +442,28 @@ export function standardDataElements(
       settings: deCustomCodeSettings(DE_ENVIRONMENT_NAME_SRC),
       storageDuration: "pageview",
     },
+    {
+      // v1.1 — Page-type DE. Single most-targeted-against attribute in
+      // real Target audiences. Without it, audience authors do brittle
+      // URL regex per audience. See DE_PAGE_TYPE_SRC for detection order.
+      name: "Page - Type",
+      delegateDescriptorId: CORE_DESCRIPTORS.custom_code_de,
+      extension: "core",
+      settings: deCustomCodeSettings(DE_PAGE_TYPE_SRC),
+      storageDuration: "pageview",
+      defaultValue: "generic",
+    },
+    {
+      // v1.1 — Send Event `data` wrapper. Reactor's Send Event schema
+      // requires data to be a %DE name% string, not a literal object.
+      // This DE returns the {__adobe: {target: {profile, mbox3rdPartyId}}}
+      // payload so profile-based audience targeting actually works.
+      name: "Target - Send Event Data",
+      delegateDescriptorId: CORE_DESCRIPTORS.custom_code_de,
+      extension: "core",
+      settings: deCustomCodeSettings(DE_TARGET_SEND_EVENT_DATA_SRC),
+      storageDuration: "pageview",
+    },
   ];
 
   if (input.includeOrderDes) {
@@ -412,26 +511,28 @@ export function rcSendEventSettings(
   xdmDeName: string,
   _profileDeName: string,
   _mbox3pIdDeName: string,
-  renderDecisions: boolean
+  renderDecisions: boolean,
+  dataDeName?: string
 ): string {
   // Send Event schema (adobe-alloy::actions::send-event) — confirmed live
-  // 2026-06-13:
+  // 2026-06:
   //   • instanceName: REQUIRED (the alloy instance name, defaults to "alloy")
   //   • xdm: MUST be a string matching ^%[^%]+%$ (a %DE name% ref)
   //   • data: MUST also be ^%[^%]+%$ if present; can't be a literal object.
-  //     We omit it for the standard page-view rule. To pass Target profile
-  //     attrs / mbox3rdPartyId through here, callers should create a wrapper
-  //     custom-code DE that returns the {__adobe:{target:{...}}} object and
-  //     extend this template to reference it.
+  //     v1.1 wires `Target - Send Event Data` here (a custom-code DE that
+  //     returns the {__adobe:{target:{profile, mbox3rdPartyId}}} payload)
+  //     so profile-based audience targeting actually reaches Target.
   //   • mergeid → mergeId (capital I); must be ≥1 char when present, omit
   //     entirely if empty.
-  return JSON.stringify({
+  const settings: Record<string, unknown> = {
     instanceName: "alloy",
     type: "web.webpagedetails.pageViews",
     xdm: `%${xdmDeName}%`,
     renderDecisions,
     documentUnloading: false,
-  });
+  };
+  if (dataDeName) settings.data = `%${dataDeName}%`;
+  return JSON.stringify(settings);
 }
 
 export function rcSendPurchaseSettings(

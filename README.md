@@ -135,6 +135,25 @@ Full reference: [docs/api-reference.md](docs/api-reference.md).
 
 The Edge Metadata API is **undocumented by Adobe**. This MCP discovered the request shape by inspecting what Adobe's own Data Collection UI sends. See [docs/architecture.md](docs/architecture.md) for the full reverse-engineering notes.
 
+## Production-readiness checklist
+
+This MCP gets you to a **working baseline** in one tool call. To take that baseline to a senior-consultant-grade production deployment, you'll likely need to harden a few items the MCP doesn't decide for you. Treat this as a pre-flight checklist before pasting the embed code into a high-traffic page:
+
+| ✓ | Item | What & why | How to handle |
+|---|---|---|---|
+| ☐ | **Scope prehiding to specific containers** | Default hides the whole `<body>` while Target loads — users see a blank page during Edge response time. The #1 cited reason marketing teams disable Target. | Pass `flickerSelectors: ["#hero", ".product-card", ".checkout-cta"]` to `setup_target_websdk`. Scopes prehiding to just those containers. |
+| ☐ | **Configure consent for EU/UK** | Default `consentMode: "in"` fires Target calls immediately. For GDPR you need `pending` + CMP-wired consent grant. | Pass `consentMode: "pending"`. Then wire your CMP (OneTrust / Cookiebot / Adobe Consent / IAB TCFv2) to dispatch a consent-granted event the Tags property listens to. v1.2 will auto-generate the consent rule per CMP vendor. |
+| ☐ | **Add SPA view-change handler** | If your site is a SPA (React/Vue/Angular/Next.js), Target only fires on hard-load by default — no personalization on client-side route changes. | Pass `includeSpaRule: true` to `create_standard_rules` (or use a v1.1 `apply_archetype` that bundles this). |
+| ☐ | **Add commerce events for ecommerce sites** | Standard Target recommendations algorithms need `commerce.productViews`, `commerce.productListAdds`, `commerce.checkouts`, `commerce.purchases` events to train. The MCP only adds `commerce.purchases` via `includeOrderRule`. | v1.2 ships an `apply_archetype: "ecommerce_standard"` tool that turns on the full commerce event suite. For v1.1, add the additional rules manually via `create_standard_rules` extensions. |
+| ☐ | **Cross-device identity via hashed email** | For B2C with authenticated users, Target needs a hashed email (SHA-256) in identityMap to stitch experiences across devices. The MCP currently sets only `mbox3rdPartyId`. | Create a custom-code DE that SHA-256s the email, then add it to the Identity Map's Email namespace. v1.2 candidate. |
+| ☐ | **Verify data layer paths match your site** | Default DE paths assume CEDDL (`digitalData.*`). Modern AEM / EDS sites use ACDL (`adobeDataLayer`); GTM-based sites use `dataLayer`. | Override `pageNamePath` and `crmIdPath` to match your actual data layer. The `discover_site` tool (v1.1) will auto-detect this. |
+| ☐ | **Set a Target property token for workspace isolation** | Default omits propertyToken — all activities go to the default workspace. Production tenants with multiple consultants per org need this for scoping. | Pass `targetPropertyToken: "<at_property-uuid>"` to `setup_target_websdk`. Find the UUID in Target UI → Administration → Properties. |
+| ☐ | **Tighten the alloy `context` array** | Default sends `["web", "device", "environment", "placeContext"]` on every event. Some sites legally cannot collect placeContext (geo) or device fingerprinting. | Override the Web SDK extension settings in Tags UI after install. |
+| ☐ | **Promote dev → staging → production** | The MCP only builds the dev library. Staging and production builds require explicit approval steps. | Use the Tags UI publishing workflow. |
+| ☐ | **Pre-connect DNS for Edge** | Adds `<link rel="preconnect" href="https://edge.adobedc.net">` to your page `<head>` — shaves ~50ms off first Edge call. | Manual `<link>` tag in your site template. |
+
+The MCP runs `validate_tags_property` against your finished property and surfaces warnings for several of these items so you can spot what's been hardened and what hasn't.
+
 ## Known caveats
 
 - **Edge propagation delay.** Newly-created datastreams take 30–60 seconds for the Edge Network to start routing. The `setup_target_websdk` orchestrator handles this; the standalone `test_edge_network` tool accepts `waitForPropagationSeconds` (recommend 90).
