@@ -115,7 +115,7 @@ test_edge_network(datastreamId: "<your-id>", waitForPropagationSeconds: 90)
 
 Expect `target_responding: true`. Then paste the embed code into your site, reload, and check your browser's Network tab for a request to `edge.adobedc.net/ee/v2/interact`.
 
-## The 20 tools
+## The 22 tools
 
 | Group | Tools |
 |---|---|
@@ -124,6 +124,8 @@ Expect `target_responding: true`. Then paste the embed code into your site, relo
 | **Library (2)** | `create_dev_library`, `get_dev_library_status` |
 | **Validation (5)** | `validate_datastream`, `validate_tags_property`, `test_edge_network`, `check_website_implementation`, `run_full_validation` |
 | **Orchestration (1)** | `setup_target_websdk` (the one-shot wizard) |
+| **Discovery (1)** | `discover_site` *(v1.1)* — static fingerprint a URL: existing implementations, data layer flavor, framework, CMP vendor, page type. Returns a `recommended_setup` config block. |
+| **Archetypes (1)** | `apply_archetype` *(v1.1)* — apply vertical-specific DEs + rules on top of a property. v1.1 ships `ecommerce_standard` (PDP, add-to-cart, checkout XDM events). |
 
 Full reference: [docs/api-reference.md](docs/api-reference.md).
 

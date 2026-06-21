@@ -1,6 +1,6 @@
 {
   "name": "target-websdk-foundation",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "MCP server that bootstraps a complete Adobe Target Web SDK implementation — datastream, Tags property, Web SDK extension, data elements, rules, and dev library — in a single tool call.",
   "type": "module",
   "main": "build/index.js",
