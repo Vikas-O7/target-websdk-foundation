@@ -3,9 +3,13 @@
 > **One MCP tool call: zero credentials → working Adobe Target Web SDK implementation.**
 > Datastream, Tags property, Web SDK extension, data elements, page-load rule, dev library, embed code — built end-to-end and validated against the live Adobe Edge Network. Roughly 3 minutes.
 
-[![npm version](https://img.shields.io/npm/v/target-websdk-foundation.svg)](https://www.npmjs.com/package/target-websdk-foundation)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
-[![Node](https://img.shields.io/node/v/target-websdk-foundation.svg)](package.json)
+[![Node ≥ 20](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](package.json)
+[![Status](https://img.shields.io/badge/status-pre--release-orange.svg)](https://github.com/Vikas-O7/target-websdk-foundation)
+<!-- Uncomment after first npm publish:
+[![npm version](https://img.shields.io/npm/v/target-websdk-foundation.svg)](https://www.npmjs.com/package/target-websdk-foundation)
+-->
+
 
 > ⚠️ **Independent open-source tool. Not affiliated with Adobe.** Built and maintained by [Vikas-O7](https://github.com/Vikas-O7).
 
