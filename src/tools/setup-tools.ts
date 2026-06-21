@@ -108,7 +108,13 @@ export function registerSetupTools(server: McpServer) {
         .string()
         .default("body { opacity: 0 !important }")
         .describe(
-          "CSS rule used to hide the page while Target activities load. Scope to specific containers for better perceived performance."
+          "Raw CSS rule to prehide while Target loads. Default hides whole body. Prefer flickerSelectors for scoped prehiding."
+        ),
+      flickerSelectors: z
+        .array(z.string().min(1))
+        .optional()
+        .describe(
+          "v1.1 — CSS selectors that should be hidden while Target loads (e.g. ['#hero', '.product-card']). When set, takes precedence over flickerStyle and scopes prehiding to just these containers (best practice)."
         ),
       idMigrationEnabled: z
         .boolean()

@@ -45,7 +45,22 @@ export function registerOrchestrationTools(server: McpServer) {
       // Web SDK
       flickerStyle: z
         .string()
-        .default("body { opacity: 0 !important }"),
+        .default("body { opacity: 0 !important }")
+        .describe(
+          "Raw CSS rule to prehide while Target loads. Default hides whole body (legacy v1.0 behavior). Prefer flickerSelectors for scoped prehiding — the senior-consultant best practice."
+        ),
+      flickerSelectors: z
+        .array(z.string().min(1))
+        .optional()
+        .describe(
+          "v1.1 — preferred prehiding scope. CSS selectors to hide while Target loads (e.g. ['#hero', '.product-card', '.checkout-cta']). When set, takes precedence over flickerStyle. Scopes prehiding to just these containers, avoiding the whole-body blank-page failure mode."
+        ),
+      consentMode: z
+        .enum(["in", "pending"])
+        .default("in")
+        .describe(
+          "v1.1 — Web SDK consent default. 'in' = SDK fires Target calls immediately (default, US-safe). 'pending' = SDK waits for explicit consent grant via a Set Consent action; required for EU/UK GDPR compliance. When 'pending', wire your CMP (OneTrust / Cookiebot / Adobe Consent / etc.) to dispatch the consent grant — see docs/consent-management.md."
+        ),
 
       // Data elements
       pageNamePath: z

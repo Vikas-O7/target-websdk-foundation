@@ -42,6 +42,20 @@ export interface SetupInput {
 
   // WebSDK extension
   flickerStyle?: string;
+  /**
+   * v1.1 — preferred prehiding scope. CSS selectors that should be hidden
+   * while Target loads. Best practice: scope to only the containers that
+   * will host personalization (hero, product cards, CTAs). When omitted,
+   * falls back to whole-body prehide and emits a validate-time warn.
+   */
+  flickerSelectors?: string[];
+  /**
+   * v1.1 — Web SDK consent default. `"in"` (default) = SDK fires Target
+   * calls immediately. `"pending"` = SDK waits for an explicit consent
+   * grant via a Set Consent action — required for EU/UK GDPR-compliant
+   * setups. Wire your CMP to dispatch the consent grant.
+   */
+  consentMode?: "in" | "pending";
 
   // Data elements
   pageNamePath?: string;
@@ -210,6 +224,8 @@ export async function setupTargetWebsdk(
       datastreamId: result.datastream_id!,
       orgId: config.ADOBE_ORG_ID,
       flickerStyle: input.flickerStyle,
+      flickerSelectors: input.flickerSelectors,
+      defaultConsent: input.consentMode ?? "in",
     });
     alloyExtensionId = ext.extensionId;
     progress.push(
