@@ -208,19 +208,56 @@ function pickLibraryFilename(envAttrs: Record<string, unknown>): string | undefi
   return (envAttrs as { library_name?: string }).library_name;
 }
 
+async function envEmbedFromDetail(
+  envDetail: JsonApiSingleResponse
+): Promise<EnvironmentEmbed> {
+  const envId = getId(envDetail);
+  const libraryPath = getAttr<string>(envDetail, "library_path") ?? "";
+  const envAttrs = (envDetail as { data?: { attributes?: Record<string, unknown> } })
+    .data?.attributes;
+  const libFilename = envAttrs ? pickLibraryFilename(envAttrs) : undefined;
+  const { scriptUrl, embedCode } = buildEmbed(libraryPath, libFilename);
+  return { id: envId, scriptUrl, embedCode };
+}
+
 export async function setupPropertyInfrastructure(
   propertyId: string
 ): Promise<PropertyInfrastructure> {
-  // 1. Create the Akamai-managed host
-  const hostBody = jsonApiCreateBody("hosts", {
-    name: "Adobe Managed",
-    type_of: "akamai",
-  });
-  const hostResp = await reactorRequest<JsonApiSingleResponse>(
-    `/properties/${propertyId}/hosts`,
-    { method: "POST", body: hostBody }
+  // 1. Host — reuse existing Akamai host if one exists, else create.
+  // Reactor allows only one host per type on a property; calling POST a
+  // second time would 409. Idempotency confirmed live 2026-06.
+  const existingHosts = await reactorPaginate<{ type_of?: string }>(
+    `/properties/${propertyId}/hosts`
   );
-  const hostId = getId(hostResp);
+  let hostId: string;
+  const existingAkamai = existingHosts.find(
+    (h) => (h.attributes as { type_of?: string }).type_of === "akamai"
+  );
+  if (existingAkamai) {
+    hostId = existingAkamai.id;
+  } else {
+    const hostBody = jsonApiCreateBody("hosts", {
+      name: "Adobe Managed",
+      type_of: "akamai",
+    });
+    const hostResp = await reactorRequest<JsonApiSingleResponse>(
+      `/properties/${propertyId}/hosts`,
+      { method: "POST", body: hostBody }
+    );
+    hostId = getId(hostResp);
+  }
+
+  // 2. Environments — fetch existing, then per stage either reuse or create.
+  // Reactor allows only ONE environment per stage; creating a duplicate 409s
+  // with "only one staging environment can be added to a property".
+  const existingEnvs = await reactorPaginate<{ stage?: string }>(
+    `/properties/${propertyId}/environments`
+  );
+  const envByStage = new Map<string, string>();
+  for (const e of existingEnvs) {
+    const stage = (e.attributes as { stage?: string }).stage;
+    if (stage) envByStage.set(stage, e.id);
+  }
 
   const stages: Array<{ stage: "development" | "staging" | "production"; display: string }> = [
     { stage: "development", display: "Development" },
@@ -230,32 +267,28 @@ export async function setupPropertyInfrastructure(
 
   const created: Partial<PropertyInfrastructure["environments"]> = {};
   for (const s of stages) {
-    const envBody = {
-      data: {
-        type: "environments",
-        attributes: { name: s.display, stage: s.stage },
-        relationships: {
-          host: { data: { id: hostId, type: "hosts" } },
+    let envId = envByStage.get(s.stage);
+    if (!envId) {
+      const envBody = {
+        data: {
+          type: "environments",
+          attributes: { name: s.display, stage: s.stage },
+          relationships: {
+            host: { data: { id: hostId, type: "hosts" } },
+          },
         },
-      },
-    };
-    const envResp = await reactorRequest<JsonApiSingleResponse>(
-      `/properties/${propertyId}/environments`,
-      { method: "POST", body: envBody }
-    );
-    const envId = getId(envResp);
-    // Fetch the environment to get the populated library_path
+      };
+      const envResp = await reactorRequest<JsonApiSingleResponse>(
+        `/properties/${propertyId}/environments`,
+        { method: "POST", body: envBody }
+      );
+      envId = getId(envResp);
+    }
+    // Always fetch full detail for library_path + library_entry_points
     const envDetail = await reactorRequest<JsonApiSingleResponse>(
       `/environments/${envId}`
     );
-    const libraryPath = getAttr<string>(envDetail, "library_path") ?? "";
-    // No build has happened yet at infra-setup time, so library filename
-    // is usually empty; embed URL will be a base path until first build.
-    const envAttrs = (envDetail as { data?: { attributes?: Record<string, unknown> } })
-      .data?.attributes;
-    const libFilename = envAttrs ? pickLibraryFilename(envAttrs) : undefined;
-    const { scriptUrl, embedCode } = buildEmbed(libraryPath, libFilename);
-    created[s.stage] = { id: envId, scriptUrl, embedCode };
+    created[s.stage] = await envEmbedFromDetail(envDetail);
   }
 
   return {

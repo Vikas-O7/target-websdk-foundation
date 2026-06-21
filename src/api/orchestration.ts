@@ -12,6 +12,7 @@ import {
   createDatastream,
   addTargetToDatastream,
   addAnalyticsToDatastream,
+  listDatastreams,
 } from "./datastreams.js";
 import {
   createTagsProperty,
@@ -99,11 +100,27 @@ export async function setupTargetWebsdk(
     return result;
   };
 
-  // 1. Create datastream
+  // 1. Datastream — reuse if name already exists, else create.
+  // Adobe's Datastream API has no name-uniqueness constraint (multiple
+  // datastreams CAN share a name); the orchestrator imposes the idempotency
+  // contract because re-running setup_target_websdk with the same inputs
+  // should be safe and produce the same end state, not silently spawn
+  // duplicate datastreams in the tenant.
   try {
-    const ds = await createDatastream({ name: input.datastreamName });
-    result.datastream_id = ds.datastreamId;
-    progress.push(`Created datastream ${ds.datastreamId} (${ds.name})`);
+    const existing = await listDatastreams(input.datastreamName);
+    const exactMatch = existing.datastreams.find(
+      (d) => d.name === input.datastreamName
+    );
+    if (exactMatch) {
+      result.datastream_id = exactMatch.id;
+      progress.push(
+        `Found existing datastream ${exactMatch.id} (${exactMatch.name})`
+      );
+    } else {
+      const ds = await createDatastream({ name: input.datastreamName });
+      result.datastream_id = ds.datastreamId;
+      progress.push(`Created datastream ${ds.datastreamId} (${ds.name})`);
+    }
   } catch (e) {
     return recordFailure("create_datastream", e);
   }
