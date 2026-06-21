@@ -128,6 +128,24 @@ If `test_edge_network` shows `target_responding: true` and you've deployed the e
 
 ---
 
+## Known issues
+
+These have been verified on live tenants and are tracked for follow-up patches:
+
+### v1.1.0 — Duplicate development environment on re-run of `setup_target_websdk`
+
+**Symptom**: After re-running `setup_target_websdk` against a property that already exists, the property may end up with two `development`-stage environments (e.g. `Development` and a duplicate `Development`).
+
+**Cause**: `setup_property_infrastructure`'s idempotency check matches existing environments by stage, but a race condition under certain Reactor API states allows a second `Development` env to be created when only one was expected.
+
+**Impact**: Cosmetic. The orchestrator still returns one of the two env IDs as `devEnvironmentId` for downstream calls, and `create_dev_library` will reuse whichever library is tied to that env. Both dev envs remain functional independently.
+
+**Workaround**: Manually delete the duplicate dev env in the Tags UI (or via `DELETE /environments/{id}`). Use the dev env returned by the most recent orchestrator call.
+
+**Fix**: Tracked in [issue (TODO)](https://github.com/Vikas-O7/target-websdk-foundation/issues). Will land in v1.1.1.
+
+---
+
 ## Filing an issue
 
 Include:

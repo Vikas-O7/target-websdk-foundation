@@ -37,7 +37,10 @@ export const CORE_DESCRIPTORS = {
   click: "core::events::click",
   custom_event: "core::events::custom-event",
   // Conditions
-  path_condition: "core::conditions::path-and-query",
+  // NOTE: descriptor is `path-and-querystring` (with "string"). The spec
+  // had `path-and-query` which Reactor rejects — confirmed 2026-06-22
+  // against core extension package version 3.4.4.
+  path_condition: "core::conditions::path-and-querystring",
   custom_code_cond: "core::conditions::custom-code",
   cookie: "core::conditions::cookie",
   data_element: "core::conditions::data-element",
@@ -565,8 +568,12 @@ export function rcPathConditionSettings(
 }
 
 export function rcCustomEventSettings(eventType: string): string {
+  // core::events::custom-event schema uses `type` (the event name),
+  // NOT `eventType`. Confirmed against core package 3.4.4 — 2026-06-22.
+  // The spec had `eventType` because alloy's Send Event action uses that
+  // field name on a different schema; easy to confuse the two.
   return JSON.stringify({
-    eventType,
+    type: eventType,
     bubbleFireIfChildFired: true,
   });
 }
