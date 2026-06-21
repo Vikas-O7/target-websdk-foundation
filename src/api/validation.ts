@@ -127,22 +127,23 @@ export async function validateDatastream(
       });
     }
 
-    const cc = (target.settings as { clientCode?: string }).clientCode;
-    if (cc && cc.length > 0) {
-      checks.push({
-        check: "Client code set",
-        status: "pass",
-        detail: `clientCode: ${cc}`,
-        severity: "critical",
-      });
-    } else {
-      checks.push({
-        check: "Client code set",
-        status: "fail",
-        detail: "Target.settings.clientCode is missing or empty.",
-        severity: "critical",
-      });
-    }
+    // Surface propertyToken configuration as informational. The legacy
+    // "clientCode" check (from the original spec) was a false negative —
+    // the modern Datastream API schema for the Target service is
+    // {enabled, propertyToken?, environmentId?, thirdPartyIdNamespace?}
+    // with NO clientCode field. Target tenant is derived from the IMS org.
+    // Live confirmation 2026-06: a Target service with only enabled:true
+    // produces a working personalization:decisions handle via Edge.
+    const propertyToken = (target.settings as { propertyToken?: string })
+      .propertyToken;
+    checks.push({
+      check: "Target property token configured",
+      status: propertyToken ? "pass" : "warn",
+      detail: propertyToken
+        ? `propertyToken: ${propertyToken}`
+        : "No propertyToken set. Optional, but recommended for workspace isolation in multi-property Target setups.",
+      severity: "info",
+    });
 
     const a4tEnabled = (target.settings as { a4tEnabled?: boolean }).a4tEnabled;
     const hasAnalytics = detail.services.some(

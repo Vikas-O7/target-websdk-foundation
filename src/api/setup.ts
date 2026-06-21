@@ -327,15 +327,26 @@ async function listInstalledExtensions(
 }
 
 async function getCoreExtensionId(propertyId: string): Promise<string> {
-  const exts = await reactorPaginate(`/properties/${propertyId}/extensions`, {
-    params: { "filter[extension_package_name]": "EQ core" },
+  // Server-side filtering by `filter[extension_package_name]` does NOT
+  // work as expected — Reactor returns ALL extensions (or behavior is
+  // unspecified) because `extension_package_name` is undefined on
+  // extension *instances* (the field only exists on the catalog records).
+  // List unfiltered and match client-side on `attributes.name`. Confirmed
+  // live 2026-06.
+  const exts = await reactorPaginate<{
+    name?: string;
+    extension_package_name?: string;
+  }>(`/properties/${propertyId}/extensions`);
+  const core = exts.find((e) => {
+    const a = e.attributes;
+    return a.name === "core" || a.extension_package_name === "core";
   });
-  if (exts.length === 0) {
+  if (!core) {
     throw new Error(
       `Core extension not found on property ${propertyId}. This is unexpected — Reactor normally auto-installs the core extension on every property.`
     );
   }
-  return exts[0].id;
+  return core.id;
 }
 
 // ── Install Web SDK extension ──────────────────────────────
