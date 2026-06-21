@@ -318,11 +318,18 @@ export async function installWebSdkExtension(input: InstallWebSdkInput): Promise
   datastreamId: string;
   alreadyInstalled: boolean;
 }> {
-  // Check whether alloy is already installed
+  // Check whether alloy is already installed.
+  // Reactor returns the package identifier as `attributes.name` on extension
+  // instances (NOT `extension_package_name`, which is `undefined`). We check
+  // both for safety across API versions. Confirmed live 2026-06.
   const installed = await listInstalledExtensions(input.propertyId);
-  const existing = installed.find(
-    (e) => (e.attributes as { extension_package_name?: string }).extension_package_name === EXTENSION_PACKAGE_NAMES.websdk
-  );
+  const existing = installed.find((e) => {
+    const a = e.attributes as { name?: string; extension_package_name?: string };
+    return (
+      a.name === EXTENSION_PACKAGE_NAMES.websdk ||
+      a.extension_package_name === EXTENSION_PACKAGE_NAMES.websdk
+    );
+  });
   if (existing) {
     return {
       extensionId: existing.id,
@@ -384,10 +391,13 @@ export async function resolveExtensionIds(
   propertyId: string
 ): Promise<{ alloyExtensionId: string; coreExtensionId: string }> {
   const exts = await listInstalledExtensions(propertyId);
-  const alloy = exts.find(
-    (e) =>
-      (e.attributes as { extension_package_name?: string }).extension_package_name === EXTENSION_PACKAGE_NAMES.websdk
-  );
+  const alloy = exts.find((e) => {
+    const a = e.attributes as { name?: string; extension_package_name?: string };
+    return (
+      a.name === EXTENSION_PACKAGE_NAMES.websdk ||
+      a.extension_package_name === EXTENSION_PACKAGE_NAMES.websdk
+    );
+  });
   if (!alloy) {
     throw new Error(
       `Web SDK (adobe-alloy) extension not found on property ${propertyId}. Install it first via install_websdk_extension.`
