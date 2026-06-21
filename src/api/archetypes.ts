@@ -243,8 +243,10 @@ function rcSendEventArchetypeSettings(xdmDeName: string): string {
 }
 
 function rcCustomEventSettings(eventType: string): string {
+  // core::events::custom-event schema uses `type` (the event name),
+  // NOT `eventType`. See templates.ts for the same fix.
   return JSON.stringify({
-    eventType,
+    type: eventType,
     bubbleFireIfChildFired: true,
   });
 }
@@ -383,10 +385,20 @@ function ecommerceRules(): ArchetypeRule[] {
 async function resolveCoreAndAlloy(
   propertyId: string
 ): Promise<{ coreExtId: string; alloyExtId: string }> {
+  // Filter to HEAD revisions only (revision_number=0). After any library
+  // build, Reactor mints revision_number>0 immutable instances of every
+  // extension/DE/rule. Those revisions are pinned to a specific package
+  // version that may not expose all delegate descriptors. We need the
+  // HEAD instance to attach new rule_components against the current
+  // package version.
+  //
+  // Same revision-model gotcha as gatherResourceIds in library.ts.
   const exts = await reactorPaginate<{
     name?: string;
     extension_package_name?: string;
-  }>(`/properties/${propertyId}/extensions`);
+  }>(`/properties/${propertyId}/extensions`, {
+    params: { "filter[revision_number]": "EQ 0" },
+  });
   const match = (target: string) =>
     exts.find((e) => {
       const a = e.attributes;
@@ -396,7 +408,7 @@ async function resolveCoreAndAlloy(
   const alloy = match("adobe-alloy");
   if (!core || !alloy) {
     throw new Error(
-      `apply_archetype: required extensions missing on property ${propertyId} (core=${!!core}, alloy=${!!alloy}). Run setup_target_websdk first.`
+      `apply_archetype: required HEAD extensions missing on property ${propertyId} (core=${!!core}, alloy=${!!alloy}). Run setup_target_websdk first.`
     );
   }
   return { coreExtId: core.id, alloyExtId: alloy.id };

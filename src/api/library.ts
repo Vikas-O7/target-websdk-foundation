@@ -130,22 +130,25 @@ async function addResourcesToLibrary(
   libraryId: string,
   revisions: { extensions: string[]; data_elements: string[]; rules: string[] }
 ): Promise<void> {
-  // Per-resource-type JSON:API relationship POSTs with `{data: [...]}` wrap.
-  // The unified `/libraries/{id}/relationships/resources` endpoint the spec
-  // described does not exist (returns 404). Confirmed live 2026-06-13.
-  const attach = async (
+  // Per-resource-type JSON:API relationship calls. PATCH semantics are
+  // "replace the relationship contents" — idempotent on rebuild because
+  // the library ends up with exactly the resources we pass, regardless of
+  // what was previously attached. POST would append/append-dup.
+  //
+  // The unified `/libraries/{id}/relationships/resources` endpoint the
+  // spec described does not exist (returns 404). Confirmed live 2026-06.
+  const replace = async (
     type: "extensions" | "data_elements" | "rules",
     ids: string[]
   ): Promise<void> => {
-    if (ids.length === 0) return;
     await reactorRequest(`/libraries/${libraryId}/relationships/${type}`, {
-      method: "POST",
+      method: "PATCH",
       body: { data: ids.map((id) => ({ id, type })) },
     });
   };
-  await attach("extensions", revisions.extensions);
-  await attach("data_elements", revisions.data_elements);
-  await attach("rules", revisions.rules);
+  await replace("extensions", revisions.extensions);
+  await replace("data_elements", revisions.data_elements);
+  await replace("rules", revisions.rules);
 }
 
 async function pollBuild(
@@ -198,23 +201,41 @@ export async function createDevLibrary(
   const name = input.libraryName ?? defaultLibraryName();
   const timeoutSec = input.buildTimeoutSeconds ?? 120;
 
-  // Step 1 — Create library tied to the dev environment
-  const libBody = {
-    data: {
-      type: "libraries",
-      attributes: { name },
-      relationships: {
-        environment: {
-          data: { id: input.devEnvironmentId, type: "environments" },
+  // Step 1 — Library: reuse if one already exists on the target environment,
+  // else create. Reactor enforces one-library-per-environment; a second POST
+  // 409s with "Environment Already In Use". Libraries are just build
+  // snapshots — preserving the existing library ID is the right idempotent
+  // behavior; we just re-attach any new resources and rebuild.
+  let libraryId: string;
+  const existingLibs = await reactorPaginate<{ name?: string }>(
+    `/properties/${input.propertyId}/libraries`
+  );
+  const libOnEnv = existingLibs.find((l) => {
+    const rel = (
+      l.relationships as { environment?: { data?: { id?: string } } } | undefined
+    )?.environment?.data?.id;
+    return rel === input.devEnvironmentId;
+  });
+  if (libOnEnv) {
+    libraryId = libOnEnv.id;
+  } else {
+    const libBody = {
+      data: {
+        type: "libraries",
+        attributes: { name },
+        relationships: {
+          environment: {
+            data: { id: input.devEnvironmentId, type: "environments" },
+          },
         },
       },
-    },
-  };
-  const libResp = await reactorRequest<JsonApiSingleResponse>(
-    `/properties/${input.propertyId}/libraries`,
-    { method: "POST", body: libBody }
-  );
-  const libraryId = getId(libResp);
+    };
+    const libResp = await reactorRequest<JsonApiSingleResponse>(
+      `/properties/${input.propertyId}/libraries`,
+      { method: "POST", body: libBody }
+    );
+    libraryId = getId(libResp);
+  }
 
   // Step 2 — Gather HEAD resources (revision_number=0 drafts)
   const heads = await gatherResourceIds(input.propertyId);
