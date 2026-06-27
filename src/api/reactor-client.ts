@@ -280,13 +280,20 @@ export function ensureSettingsString(settings: unknown): string {
  *     GET /companies/{company_id}/properties
  *
  * Each Adobe Org typically has exactly one Reactor company. We resolve it
- * lazily on first use by calling `GET /companies` and matching on `org_id`,
- * then cache the result in module state.
+ * lazily on first use by calling `GET /companies` and matching on `org_id`.
+ *
+ * Cache is keyed by ORG_ID, NOT module-global. In HTTP-mode multi-tenant
+ * deployments many tenants share one Node process; a module-global cache
+ * would leak one tenant's company ID into another tenant's tool calls.
+ * Same isolation pattern as the IMS token cache.
  */
-let cachedCompanyId: string | null = null;
+const companyIdCache = new Map<string, string>();
 
 export async function getReactorCompanyId(): Promise<string> {
-  if (cachedCompanyId) return cachedCompanyId;
+  const { config } = await import("../config.js");
+  const orgId = config.ADOBE_ORG_ID;
+  const hit = companyIdCache.get(orgId);
+  if (hit) return hit;
 
   const companies = await reactorPaginate<{
     name?: string;
@@ -301,17 +308,19 @@ export async function getReactorCompanyId(): Promise<string> {
 
   // Match by org_id first (most reliable). Fall back to first if none match
   // (single-company orgs sometimes return without org_id populated).
-  const { config } = await import("../config.js");
   const match = companies.find(
-    (c) => (c.attributes as { org_id?: string }).org_id === config.ADOBE_ORG_ID
+    (c) => (c.attributes as { org_id?: string }).org_id === orgId
   );
   const picked = match ?? companies[0];
-  cachedCompanyId = picked.id;
-  return cachedCompanyId;
+  companyIdCache.set(orgId, picked.id);
+  return picked.id;
 }
 
 export function clearReactorCompanyCache(): void {
-  cachedCompanyId = null;
+  // Best-effort cleanup; static import would be circular at module top.
+  void import("../config.js").then((m) => {
+    companyIdCache.delete(m.config.ADOBE_ORG_ID);
+  });
 }
 
 // ── JSON:API body builders ──────────────────────────────────
