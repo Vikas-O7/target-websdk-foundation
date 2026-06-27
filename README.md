@@ -13,7 +13,7 @@
 -->
 
 
-> ⚠️ **Independent open-source tool. Not affiliated with Adobe.** Built and maintained by [Vikas-O7](https://github.com/Vikas-O7).
+> ⚠️ **Independent open-source tool. Not affiliated with Adobe.** Built and maintained by Vikas Ohlan [Vikas-O7](https://github.com/Vikas-O7).
 
 ---
 
