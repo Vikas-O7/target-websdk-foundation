@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] - 2026-06-27
+
+### Added — Hosted HTTP deployment
+
+This release adds **Streamable HTTP transport** so the same MCP can run as a hosted multi-tenant service. The original stdio mode is unchanged — every existing local install keeps working.
+
+- **`src/index-http.ts`** — HTTP entry point. Boots a Streamable HTTP transport (per the November 2025 MCP spec). Each request is authenticated by custom headers and runs in an isolated AsyncLocalStorage context so multiple tenants can share one Node process without credential leakage.
+- **`api/mcp.ts`** — Vercel serverless function wrapper.
+- **`vercel.json`** — Vercel deployment config. Routes `/`, `/health`, `/mcp` to the same function with a 300-second timeout.
+- **`src/request-context.ts`** — AsyncLocalStorage-backed per-request configuration. Includes `configFromHeaders()` for extracting tenant credentials from custom HTTP headers (`X-Adobe-Client-Id`, `X-Adobe-Client-Secret`, `X-Adobe-Org-Id`, `X-Adobe-Scopes`, `X-Adobe-Sandbox-Name`).
+- **`docs/cx-coworker-setup.md`** — step-by-step guide for deploying to Vercel and connecting from Adobe CX Coworker.
+- **`bin: target-websdk-foundation-http`** — new entry point for `npx target-websdk-foundation-http` to run a local HTTP dev server on port 3000.
+- **`npm scripts`**: `dev:http`, `start:http`.
+
+### Changed — Multi-tenant safety
+
+The IMS token cache (`src/auth/adobe-ims.ts`) and Reactor company-ID cache (`src/api/reactor-client.ts`) were previously module-global singletons. In HTTP mode many tenants share one Node process, so these caches are now **keyed by `client_id` / `org_id`** to prevent cross-tenant leakage. Stdio mode behavior is unchanged (single tenant = single cache entry, same effective behavior as before).
+
+`src/config.ts` is now context-aware: in HTTP mode, every `config.X` access reads from the current request's AsyncLocalStorage context; in stdio mode, the boot-time env parse continues to work unchanged. Existing API client code is unmodified (no parameter threading required).
+
+### Documentation
+
+- README updated with the dual-mode story (stdio vs HTTP) and a 1-click Deploy to Vercel button.
+- CX Coworker setup guide covers prerequisites, one-time Vercel deploy, per-user connection flow, security notes, and self-hosting alternatives (Cloudflare Workers, Railway, Adobe internal infra).
+
+### What's NOT in this release
+
+The "principal-consultant grade" implementation improvements (Library Loaded event swap, Guided Events configuration, selectable DEs/rules, page-load rule conditions menu, fixing the linter warnings in custom-code DEs, ensuring `Target - Send Event Data` DE is created on legacy v1.0 properties) are scoped for **v1.3.0**. They're additive on top of the v1.2 transport work.
+
+---
+
 ## [1.1.0] - 2026-06-22
 
 ### Added

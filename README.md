@@ -3,6 +3,8 @@
 > **One MCP tool call: zero credentials → working Adobe Target Web SDK implementation.**
 > Datastream, Tags property, Web SDK extension, data elements, page-load rule, dev library, embed code — built end-to-end and validated against the live Adobe Edge Network. Roughly 3 minutes.
 
+> 🆕 **v1.2**: Streamable HTTP transport. Deploy once to Vercel; anyone in your team adds the URL to Adobe CX Coworker → MCP Servers and is ready in 2 minutes. [Setup guide](docs/cx-coworker-setup.md).
+
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache_2.0-blue.svg)](LICENSE)
 [![Node ≥ 20](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](package.json)
 [![Status](https://img.shields.io/badge/status-pre--release-orange.svg)](https://github.com/Vikas-O7/target-websdk-foundation)
@@ -17,7 +19,11 @@
 
 ## What this is
 
-An **MCP server** for Claude / Claude Code / Cursor / any MCP host. It drives Adobe's Reactor API and Edge Metadata API to bootstrap a complete Adobe Target Web SDK implementation in a single conversation. Hand it your Adobe credentials and a website domain; it produces a dev embed code you paste into your site's `<head>`.
+An **MCP server** for Claude / Claude Code / Cursor / Adobe CX Coworker / any MCP host. It drives Adobe's Reactor API and Edge Metadata API to bootstrap a complete Adobe Target Web SDK implementation in a single conversation. Hand it your Adobe credentials and a website domain; it produces a dev embed code you paste into your site's `<head>`.
+
+**Two deployment modes:**
+- **stdio (local)**: `npm install -g target-websdk-foundation` → add to your local `~/.claude.json`. Single-tenant; credentials in env vars. Good for solo developers.
+- **HTTP (hosted)**: Deploy to Vercel (or self-host) → add the URL to Adobe CX Coworker / Claude.ai MCP settings. Multi-tenant; credentials per-user via headers. Good for teams.
 
 ## What this is NOT
 

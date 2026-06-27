@@ -1,0 +1,20 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm run build",
+  "outputDirectory": "build",
+  "installCommand": "npm ci",
+  "framework": null,
+  "rewrites": [
+    { "source": "/mcp", "destination": "/api/mcp" },
+    { "source": "/", "destination": "/api/mcp" },
+    { "source": "/health", "destination": "/api/mcp" }
+  ],
+  "env": {
+    "MCP_TRANSPORT": "http"
+  },
+  "functions": {
+    "api/mcp.ts": {
+      "maxDuration": 300
+    }
+  }
+}

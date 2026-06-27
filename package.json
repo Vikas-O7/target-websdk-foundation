@@ -1,14 +1,18 @@
 {
   "name": "target-websdk-foundation",
-  "version": "1.1.0",
-  "description": "MCP server that bootstraps a complete Adobe Target Web SDK implementation — datastream, Tags property, Web SDK extension, data elements, rules, and dev library — in a single tool call.",
+  "version": "1.2.0",
+  "description": "MCP server that bootstraps a complete Adobe Target Web SDK implementation — datastream, Tags property, Web SDK extension, data elements, rules, and dev library — in a single tool call. v1.2 adds Streamable HTTP transport for hosted multi-tenant deployments (Vercel / Adobe CX Coworker).",
   "type": "module",
   "main": "build/index.js",
   "bin": {
-    "target-websdk-foundation": "./build/index.js"
+    "target-websdk-foundation": "./build/index.js",
+    "target-websdk-foundation-http": "./build/index-http.js"
   },
   "files": [
     "build",
+    "api",
+    "vercel.json",
+    "CHANGELOG.md",
     "README.md",
     "LICENSE",
     ".env.example"
@@ -16,7 +20,9 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
+    "dev:http": "MCP_TRANSPORT=http tsx watch src/index-http.ts",
     "start": "node build/index.js",
+    "start:http": "MCP_TRANSPORT=http node build/index-http.js",
     "test": "tsx --test tests/*.test.ts",
     "lint": "tsc --noEmit",
     "prepublishOnly": "npm run build"
@@ -34,7 +40,10 @@
     "data-collection",
     "datastream",
     "claude",
-    "ai-tools"
+    "ai-tools",
+    "cx-coworker",
+    "vercel",
+    "serverless"
   ],
   "author": "Vikas-O7 <https://github.com/Vikas-O7>",
   "license": "Apache-2.0",
