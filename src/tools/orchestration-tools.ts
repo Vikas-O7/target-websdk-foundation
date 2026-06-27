@@ -70,9 +70,79 @@ export function registerOrchestrationTools(server: McpServer) {
         .string()
         .default("digitalData.user[0].profile[0].profileInfo.profileID"),
       includeOrderDes: z.boolean().default(false),
+      dataElementSelection: z
+        .object({
+          pageContext: z.boolean().optional().describe("DEs: Page-Name, URL, Referrer, Type. Default true."),
+          identity: z.boolean().optional().describe("DEs: User-AuthState, User-CRMID, XDM-IdentityMap. Default true."),
+          targetProfile: z.boolean().optional().describe("DEs: Target-ProfileAttributes, Target-mbox3rdPartyId, Target-SendEventData. Default true. Disabling breaks profile-based audience targeting."),
+          xdm: z.boolean().optional().describe("DE: XDM-PageView. Default true. Disabling breaks Send Event."),
+          environment: z.boolean().optional().describe("DE: Environment-Name. Default true."),
+          orderTracking: z.boolean().optional().describe("DEs: Order-ID, Order-Total, Order-Products. Default false (opt-in for ecommerce)."),
+          overrides: z
+            .record(z.string(), z.boolean())
+            .optional()
+            .describe("Per-DE-name force-include or force-exclude. Wins over category defaults. Example: { 'Page - Referrer': false } drops just the referrer DE."),
+        })
+        .optional()
+        .describe(
+          "v1.3 — categorical DE selection plus per-name overrides. Default: all categories on EXCEPT orderTracking. Senior consultants use this to drop DE families their site doesn't need."
+        ),
 
       // Rules
       renderDecisions: z.boolean().default(true),
+      includePageLoadRule: z
+        .boolean()
+        .default(true)
+        .describe("v1.3 — set false to skip creating the page-load rule entirely (rare; only if managing the page-load rule manually)."),
+      pageLoadConditions: z
+        .array(
+          z.discriminatedUnion("kind", [
+            z.object({
+              kind: z.literal("url-matches"),
+              paths: z.array(z.object({ value: z.string().min(1), isRegex: z.boolean().optional() })).min(1),
+              negate: z.boolean().optional(),
+            }),
+            z.object({
+              kind: z.literal("path-only"),
+              paths: z.array(z.object({ value: z.string().min(1), isRegex: z.boolean().optional() })).min(1),
+              negate: z.boolean().optional(),
+            }),
+            z.object({
+              kind: z.literal("cookie-equals"),
+              name: z.string().min(1),
+              values: z.array(z.object({ value: z.string().min(1), isRegex: z.boolean().optional() })).min(1),
+              negate: z.boolean().optional(),
+            }),
+            z.object({
+              kind: z.literal("domain-matches"),
+              domains: z.array(z.string().min(1)).min(1),
+              negate: z.boolean().optional(),
+            }),
+            z.object({
+              kind: z.literal("subdomain-matches"),
+              subdomains: z.array(z.string().min(1)).min(1),
+              negate: z.boolean().optional(),
+            }),
+            z.object({
+              kind: z.literal("data-element-equals"),
+              dataElementName: z.string().min(1),
+              expectedValue: z.string(),
+              caseInsensitive: z.boolean().optional(),
+              negate: z.boolean().optional(),
+            }),
+            z.object({
+              kind: z.literal("raw"),
+              delegateDescriptorId: z.string().min(1),
+              settings: z.record(z.string(), z.unknown()),
+              name: z.string().optional(),
+              negate: z.boolean().optional(),
+            }),
+          ])
+        )
+        .optional()
+        .describe(
+          "v1.3 — conditions menu for the page-load rule. Common kinds: url-matches / path-only / cookie-equals / domain-matches / subdomain-matches / data-element-equals. Use 'raw' as escape hatch for any Reactor descriptor. All conditions are AND-ed. Omit for 'fire on every page' (v1.2 default)."
+        ),
       includeOrderRule: z.boolean().default(false),
       orderPagePath: z.string().default("/order-confirmation"),
 
