@@ -29,7 +29,6 @@ An **MCP server** for Claude / Claude Code / Cursor / Adobe CX Coworker / any MC
 
 - **Not for at.js → Web SDK migration.** Different problem, future product.
 - **Not for Target activity creation.** Use Adobe's [official Target MCP](https://experienceleague.adobe.com/en/docs/target/using/mcp/target-mcp) or the Target UI.
-- **Not for visual verification.** Use Target Lens, AEP Debugger, or your browser.
 - **Not for mobile properties.** Web only in v1.
 
 ## Quickstart (5 minutes)
