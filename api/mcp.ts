@@ -41,9 +41,13 @@ export default async function handler(
   }
 }
 
-// Vercel config — extend timeout for slow Adobe API calls (library
-// builds can take 30+s, full validation 60+s).
+// Vercel function config — extend timeout for slow Adobe API calls
+// (library builds can take 30+s, full validation 60+s).
+//
+// `runtime` only accepts "nodejs" | "edge" | "experimental-edge" at the
+// function level; specific Node versions are set via project settings
+// (Settings → General → Node.js Version). We omit `runtime` here so
+// Vercel uses the project default (Node 20+).
 export const config = {
-  runtime: "nodejs20.x",
   maxDuration: 300,
 };
