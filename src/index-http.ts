@@ -41,8 +41,9 @@ import { registerValidationTools } from "./tools/validation-tools.js";
 import { registerOrchestrationTools } from "./tools/orchestration-tools.js";
 import { registerDiscoveryTools } from "./tools/discovery-tools.js";
 import { registerArchetypeTools } from "./tools/archetype-tools.js";
+import { registerCatalogSyncTools } from "./tools/catalog-sync-tools.js";
 
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const SERVER_NAME = "target-websdk-foundation";
 
 // ── Per-request MCP server factory ──────────────────────────
@@ -55,6 +56,7 @@ function buildServer(): McpServer {
   registerOrchestrationTools(server);
   registerDiscoveryTools(server);
   registerArchetypeTools(server);
+  registerCatalogSyncTools(server);
   return server;
 }
 
@@ -86,7 +88,7 @@ export async function handleHttpRequest(
         name: SERVER_NAME,
         version: VERSION,
         transport: "streamable-http",
-        tools_count: 22,
+        tools_count: 23,
         docs: "https://github.com/Vikas-O7/target-websdk-foundation",
         required_headers: Object.values(HTTP_HEADER_NAMES),
       })
@@ -203,7 +205,7 @@ async function runLocalDevServer(): Promise<void> {
   httpServer.listen(port, () => {
     console.error("═══════════════════════════════════════════════════════");
     console.error(`  Target Web SDK Foundation v${VERSION} — HTTP mode`);
-    console.error(`  22 tools registered across 7 tool groups`);
+    console.error(`  23 tools registered across 8 tool groups`);
     console.error(`  Listening on http://localhost:${port}`);
     console.error(`  Health:  GET  http://localhost:${port}/health`);
     console.error(`  MCP:     POST http://localhost:${port}/mcp`);

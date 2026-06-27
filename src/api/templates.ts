@@ -259,9 +259,9 @@ try {
     var profile = digitalData.user[0].profile && digitalData.user[0].profile[0];
     if (profile) {
       var info = profile.profileInfo || {};
-      if (info.loyaltyStatus)  attrs["loyaltyStatus"]    = info.loyaltyStatus;
-      if (info.segment)        attrs["customerSegment"]  = info.segment;
-      if (info.loyaltyTier)    attrs["loyaltyTier"]      = info.loyaltyTier;
+      if (info.loyaltyStatus) attrs.loyaltyStatus = info.loyaltyStatus;
+      if (info.segment)       attrs.customerSegment = info.segment;
+      if (info.loyaltyTier)   attrs.loyaltyTier = info.loyaltyTier;
     }
   }
 } catch(e) {}
@@ -343,6 +343,14 @@ return {
  * `extension` is the package name; the caller resolves it to the installed
  * extension's ID at runtime.
  */
+export type DECategory =
+  | "pageContext"
+  | "identity"
+  | "targetProfile"
+  | "xdm"
+  | "environment"
+  | "orderTracking";
+
 export interface StandardDataElement {
   name: string;
   delegateDescriptorId: string;
@@ -351,8 +359,42 @@ export interface StandardDataElement {
   settings: string;
   storageDuration: "pageview" | "session" | "visitor";
   defaultValue?: string;
-  /** Whether this DE is created only when `includeOrderDes` is true. */
+  /** v1.3 — which DE family this belongs to, for selection filtering. */
+  category: DECategory;
+  /**
+   * @deprecated v1.3 — use category === "orderTracking" instead.
+   * Still set for backward compat with any external callers.
+   */
   orderOnly?: boolean;
+}
+
+// ── Selectable DE categories (v1.3) ────────────────────────────────────
+//
+// Senior consultants want to pick which DE families their site needs.
+// Default: everything except order tracking on (matches the consultant-
+// grade baseline). Order tracking is opt-in because not every site is
+// ecommerce. Categories compose flat:
+//
+//   pageContext     → Page - Name, Page - URL, Page - Referrer, Page - Type
+//   identity        → User - Auth State, User - CRM ID, XDM - Identity Map
+//   targetProfile   → Target - Profile Attributes, Target - mbox3rdPartyId,
+//                     Target - Send Event Data
+//   xdm             → XDM - Page View
+//   environment     → Environment - Name
+//   orderTracking   → Order - ID, Order - Total, Order - Products
+//
+// Per-item overrides take precedence over categories (e.g. skip Page
+// Referrer while keeping the rest of pageContext on).
+export interface DataElementSelection {
+  /** Defaults: all true except orderTracking. */
+  pageContext?: boolean;
+  identity?: boolean;
+  targetProfile?: boolean;
+  xdm?: boolean;
+  environment?: boolean;
+  orderTracking?: boolean;
+  /** Force-include or force-exclude individual DE by name. */
+  overrides?: Record<string, boolean>;
 }
 
 export interface StandardDeInput {
@@ -360,7 +402,13 @@ export interface StandardDeInput {
   crmIdPath: string;
   orderIdPath?: string;
   orderTotalPath?: string;
+  /**
+   * @deprecated v1.3 — use selection.orderTracking instead. Still
+   * honored for backward compatibility.
+   */
   includeOrderDes?: boolean;
+  /** v1.3 selection map. */
+  selection?: DataElementSelection;
 }
 
 /**
@@ -371,7 +419,24 @@ export interface StandardDeInput {
 export function standardDataElements(
   input: StandardDeInput
 ): StandardDataElement[] {
-  const des: StandardDataElement[] = [
+  // Selection: categories default-on except orderTracking.
+  // Legacy `includeOrderDes: true` is honored as orderTracking opt-in.
+  const sel = input.selection ?? {};
+  const orderTrackingOn =
+    sel.orderTracking ?? input.includeOrderDes ?? false;
+  const enabled: Record<DECategory, boolean> = {
+    pageContext: sel.pageContext ?? true,
+    identity: sel.identity ?? true,
+    targetProfile: sel.targetProfile ?? true,
+    xdm: sel.xdm ?? true,
+    environment: sel.environment ?? true,
+    orderTracking: orderTrackingOn,
+  };
+  const overrides = sel.overrides ?? {};
+
+  // Full catalog with category tags. Order matters: DEs that reference
+  // others by %name% must follow their dependencies in this array.
+  const catalog: StandardDataElement[] = [
     {
       name: "Page - Name",
       delegateDescriptorId: CORE_DESCRIPTORS.js_variable,
@@ -379,6 +444,7 @@ export function standardDataElements(
       settings: deJsVariableSettings(input.pageNamePath),
       storageDuration: "pageview",
       defaultValue: "unknown",
+      category: "pageContext",
     },
     {
       name: "Page - URL",
@@ -386,6 +452,7 @@ export function standardDataElements(
       extension: "core",
       settings: deJsVariableSettings("window.location.href"),
       storageDuration: "pageview",
+      category: "pageContext",
     },
     {
       name: "Page - Referrer",
@@ -394,6 +461,7 @@ export function standardDataElements(
       settings: deJsVariableSettings("document.referrer"),
       storageDuration: "pageview",
       defaultValue: "",
+      category: "pageContext",
     },
     {
       name: "User - Auth State",
@@ -401,6 +469,7 @@ export function standardDataElements(
       extension: "core",
       settings: deCustomCodeSettings(DE_USER_AUTH_STATE_SRC),
       storageDuration: "session",
+      category: "identity",
     },
     {
       name: "User - CRM ID",
@@ -408,6 +477,7 @@ export function standardDataElements(
       extension: "core",
       settings: deJsVariableSettings(input.crmIdPath),
       storageDuration: "visitor",
+      category: "identity",
     },
     {
       name: "XDM - Page View",
@@ -415,6 +485,7 @@ export function standardDataElements(
       extension: "core",
       settings: deCustomCodeSettings(DE_XDM_PAGE_VIEW_SRC),
       storageDuration: "pageview",
+      category: "xdm",
     },
     {
       name: "XDM - Identity Map",
@@ -422,6 +493,7 @@ export function standardDataElements(
       extension: "alloy",
       settings: deIdentityMapSettings("User - CRM ID", "User - Auth State"),
       storageDuration: "visitor",
+      category: "identity",
     },
     {
       name: "Target - Profile Attributes",
@@ -429,6 +501,7 @@ export function standardDataElements(
       extension: "core",
       settings: deCustomCodeSettings(DE_TARGET_PROFILE_ATTRS_SRC),
       storageDuration: "pageview",
+      category: "targetProfile",
     },
     {
       name: "Target - mbox3rdPartyId",
@@ -437,6 +510,7 @@ export function standardDataElements(
       settings: deJsVariableSettings(input.crmIdPath),
       storageDuration: "visitor",
       defaultValue: "",
+      category: "targetProfile",
     },
     {
       name: "Environment - Name",
@@ -444,70 +518,134 @@ export function standardDataElements(
       extension: "core",
       settings: deCustomCodeSettings(DE_ENVIRONMENT_NAME_SRC),
       storageDuration: "pageview",
+      category: "environment",
     },
     {
-      // v1.1 — Page-type DE. Single most-targeted-against attribute in
-      // real Target audiences. Without it, audience authors do brittle
-      // URL regex per audience. See DE_PAGE_TYPE_SRC for detection order.
       name: "Page - Type",
       delegateDescriptorId: CORE_DESCRIPTORS.custom_code_de,
       extension: "core",
       settings: deCustomCodeSettings(DE_PAGE_TYPE_SRC),
       storageDuration: "pageview",
       defaultValue: "generic",
+      category: "pageContext",
     },
     {
-      // v1.1 — Send Event `data` wrapper. Reactor's Send Event schema
-      // requires data to be a %DE name% string, not a literal object.
-      // This DE returns the {__adobe: {target: {profile, mbox3rdPartyId}}}
-      // payload so profile-based audience targeting actually works.
+      // The wrapper DE the Send Event action references in its `data`
+      // field. Without it, profile attributes silently don't reach Target.
       name: "Target - Send Event Data",
       delegateDescriptorId: CORE_DESCRIPTORS.custom_code_de,
       extension: "core",
       settings: deCustomCodeSettings(DE_TARGET_SEND_EVENT_DATA_SRC),
       storageDuration: "pageview",
+      category: "targetProfile",
+    },
+    {
+      name: "Order - ID",
+      delegateDescriptorId: CORE_DESCRIPTORS.js_variable,
+      extension: "core",
+      settings: deJsVariableSettings(
+        input.orderIdPath ?? "digitalData.transaction.transactionID"
+      ),
+      storageDuration: "pageview",
+      category: "orderTracking",
+      orderOnly: true,
+    },
+    {
+      name: "Order - Total",
+      delegateDescriptorId: CORE_DESCRIPTORS.js_variable,
+      extension: "core",
+      settings: deJsVariableSettings(
+        input.orderTotalPath ?? "digitalData.transaction.total.basePrice"
+      ),
+      storageDuration: "pageview",
+      category: "orderTracking",
+      orderOnly: true,
+    },
+    {
+      name: "Order - Products",
+      delegateDescriptorId: CORE_DESCRIPTORS.custom_code_de,
+      extension: "core",
+      settings: deCustomCodeSettings(DE_ORDER_PRODUCTS_SRC),
+      storageDuration: "pageview",
+      category: "orderTracking",
+      orderOnly: true,
     },
   ];
 
-  if (input.includeOrderDes) {
-    des.push(
-      {
-        name: "Order - ID",
-        delegateDescriptorId: CORE_DESCRIPTORS.js_variable,
-        extension: "core",
-        settings: deJsVariableSettings(
-          input.orderIdPath ?? "digitalData.transaction.transactionID"
-        ),
-        storageDuration: "pageview",
-        orderOnly: true,
-      },
-      {
-        name: "Order - Total",
-        delegateDescriptorId: CORE_DESCRIPTORS.js_variable,
-        extension: "core",
-        settings: deJsVariableSettings(
-          input.orderTotalPath ?? "digitalData.transaction.total.basePrice"
-        ),
-        storageDuration: "pageview",
-        orderOnly: true,
-      },
-      {
-        name: "Order - Products",
-        delegateDescriptorId: CORE_DESCRIPTORS.custom_code_de,
-        extension: "core",
-        settings: deCustomCodeSettings(DE_ORDER_PRODUCTS_SRC),
-        storageDuration: "pageview",
-        orderOnly: true,
-      }
-    );
-  }
-
-  return des;
+  // Filter: category enables baseline; per-item override wins both ways.
+  return catalog.filter((de) => {
+    const override = overrides[de.name];
+    if (override === true) return true;
+    if (override === false) return false;
+    return enabled[de.category];
+  });
 }
 
 // ── Rule component settings builders ───────────────────────────────────
 export function rcDomReadySettings(): string {
   return JSON.stringify({});
+}
+
+/**
+ * Library Loaded (Page Top) event — best-practice trigger for the
+ * Target page-load rule.
+ *
+ * Why over DOM Ready: Library Loaded fires the instant the Tags
+ * library finishes initializing — typically several hundred ms before
+ * DOM Ready. That gives Target the head start it needs to fetch
+ * decisions and apply propositions BEFORE the browser starts rendering
+ * the personalized regions of the page. Result: significantly less
+ * flicker on personalized content.
+ *
+ * Schema confirmed live against core 3.4.4 (2026-06): empty settings.
+ * The "Page Top" placement is implicit — Library Loaded fires from
+ * whatever position in the HTML the consultant pastes the Tags embed
+ * script (best practice: top of <head>, before any other marketing
+ * tags).
+ */
+export function rcLibraryLoadedSettings(): string {
+  return JSON.stringify({});
+}
+
+/**
+ * Guided Events mode for Send Event — the consultant-grade default.
+ *
+ * Adobe's Tags UI exposes "Use guided events" with two named modes:
+ *   - "Request personalization" — fetches the latest Target decisions
+ *     WITHOUT recording an Analytics event. Right call for page-load
+ *     where you want personalization but don't want to double-count a
+ *     page view (your Analytics extension is handling that separately).
+ *   - "Collect analytics" — records an event WITHOUT requesting
+ *     personalization. Right call for downstream events (PDP view,
+ *     add-to-cart) where you've already personalized at page-load and
+ *     are just recording user actions.
+ *
+ * Schema fields (confirmed against adobe-alloy 2.37.0):
+ *   - guidedEventsEnabled: boolean
+ *   - guidedEvent: string — "personalizationRequest" or "analyticsRequest"
+ *   - type: omitted; Adobe derives the right XDM eventType from the
+ *     guided mode internally
+ *   - xdm + data: still passed through as %DE name% refs
+ *   - renderDecisions: kept; consumed by "personalizationRequest" mode
+ */
+export type GuidedEventMode = "personalizationRequest" | "analyticsRequest";
+
+export function rcGuidedSendEventSettings(opts: {
+  xdmDeName: string;
+  mode: GuidedEventMode;
+  dataDeName?: string;
+  renderDecisions?: boolean;
+}): string {
+  const settings: Record<string, unknown> = {
+    instanceName: "alloy",
+    guidedEventsEnabled: true,
+    guidedEvent: opts.mode,
+    xdm: `%${opts.xdmDeName}%`,
+    renderDecisions: opts.renderDecisions ?? opts.mode === "personalizationRequest",
+    documentUnloading: false,
+  };
+  if (opts.dataDeName) settings.data = `%${opts.dataDeName}%`;
+  return JSON.stringify(settings);
 }
 
 export function rcSendEventSettings(
@@ -565,6 +703,166 @@ export function rcPathConditionSettings(
   return JSON.stringify({
     paths: [{ value: path, valueIsRegex: isRegex }],
   });
+}
+
+// ── Conditions menu — pre-defined common conditions for page-load rule ──
+//
+// The v1.3 conditions menu lets consultants gate the page-load rule on
+// common predicates without learning Reactor descriptor IDs by heart.
+// Each kind maps to one core::conditions::* descriptor with a settings
+// shape validated against the core 3.4.4 schemas.
+//
+// Schemas confirmed live:
+//   url-matches            → core::conditions::path-and-querystring
+//   path-only              → core::conditions::path  (NO query string)
+//   cookie-equals          → core::conditions::cookie
+//   domain-matches         → core::conditions::domain
+//   subdomain-matches      → core::conditions::subdomain
+//   data-element-equals    → core::conditions::value-comparison
+//   raw                    → escape hatch for any descriptor + settings
+
+export type PageLoadCondition =
+  | {
+      kind: "url-matches";
+      /** One or more URL paths (path + querystring). */
+      paths: Array<{ value: string; isRegex?: boolean }>;
+      /** Set true to NEGATE — fires when none of the paths match. */
+      negate?: boolean;
+    }
+  | {
+      kind: "path-only";
+      /** Path only (no querystring). */
+      paths: Array<{ value: string; isRegex?: boolean }>;
+      negate?: boolean;
+    }
+  | {
+      kind: "cookie-equals";
+      /** Cookie name (must match RFC 6265 token chars). */
+      name: string;
+      /** Acceptable values (OR'd). */
+      values: Array<{ value: string; isRegex?: boolean }>;
+      negate?: boolean;
+    }
+  | {
+      kind: "domain-matches";
+      domains: string[];
+      negate?: boolean;
+    }
+  | {
+      kind: "subdomain-matches";
+      subdomains: string[];
+      negate?: boolean;
+    }
+  | {
+      kind: "data-element-equals";
+      /** Data element name (referenced via %name% — fetched at runtime). */
+      dataElementName: string;
+      /** Expected value (string match). */
+      expectedValue: string;
+      caseInsensitive?: boolean;
+      negate?: boolean;
+    }
+  | {
+      kind: "raw";
+      /** Escape hatch — pass any descriptor + raw settings object. */
+      delegateDescriptorId: string;
+      settings: Record<string, unknown>;
+      name?: string;
+      negate?: boolean;
+    };
+
+export interface BuiltCondition {
+  delegateDescriptorId: string;
+  settings: string; // JSON-encoded
+  name: string;
+  negate: boolean;
+}
+
+/**
+ * Compiles a PageLoadCondition spec into the descriptor + settings
+ * + display-name that the rule_components POST needs.
+ */
+export function buildCondition(spec: PageLoadCondition): BuiltCondition {
+  switch (spec.kind) {
+    case "url-matches":
+      return {
+        delegateDescriptorId: "core::conditions::path-and-querystring",
+        settings: JSON.stringify({
+          paths: spec.paths.map((p) => ({
+            value: p.value,
+            valueIsRegex: !!p.isRegex,
+          })),
+        }),
+        name: `URL ${spec.negate ? "does not match" : "matches"}: ${spec.paths.map((p) => p.value).join(", ")}`,
+        negate: !!spec.negate,
+      };
+    case "path-only":
+      return {
+        delegateDescriptorId: "core::conditions::path",
+        settings: JSON.stringify({
+          paths: spec.paths.map((p) => ({
+            value: p.value,
+            valueIsRegex: !!p.isRegex,
+          })),
+        }),
+        name: `Path ${spec.negate ? "does not match" : "matches"}: ${spec.paths.map((p) => p.value).join(", ")}`,
+        negate: !!spec.negate,
+      };
+    case "cookie-equals":
+      return {
+        delegateDescriptorId: "core::conditions::cookie",
+        settings: JSON.stringify({
+          name: spec.name,
+          cookieValues: spec.values.map((v) => ({
+            value: v.value,
+            valueIsRegex: !!v.isRegex,
+          })),
+        }),
+        name: `Cookie '${spec.name}' ${spec.negate ? "is not" : "is"} one of [${spec.values.map((v) => v.value).join(", ")}]`,
+        negate: !!spec.negate,
+      };
+    case "domain-matches":
+      return {
+        delegateDescriptorId: "core::conditions::domain",
+        settings: JSON.stringify({ domains: spec.domains }),
+        name: `Domain ${spec.negate ? "is not" : "is"} one of [${spec.domains.join(", ")}]`,
+        negate: !!spec.negate,
+      };
+    case "subdomain-matches":
+      return {
+        delegateDescriptorId: "core::conditions::subdomain",
+        settings: JSON.stringify({ subdomains: spec.subdomains }),
+        name: `Subdomain ${spec.negate ? "is not" : "is"} one of [${spec.subdomains.join(", ")}]`,
+        negate: !!spec.negate,
+      };
+    case "data-element-equals":
+      // value-comparison schema:
+      //   { leftOperand, comparison: {operator, caseInsensitive}, rightOperand }
+      // For data-element-equals we put %DE name% on the left and the
+      // expected value on the right.
+      return {
+        delegateDescriptorId: "core::conditions::value-comparison",
+        settings: JSON.stringify({
+          leftOperand: `%${spec.dataElementName}%`,
+          comparison: {
+            operator: spec.negate ? "doesNotEqual" : "equals",
+            caseInsensitive: !!spec.caseInsensitive,
+          },
+          rightOperand: spec.expectedValue,
+        }),
+        name: `Data element '${spec.dataElementName}' ${spec.negate ? "≠" : "="} '${spec.expectedValue}'`,
+        // value-comparison handles its own negation via the operator,
+        // so the component's negate flag stays false.
+        negate: false,
+      };
+    case "raw":
+      return {
+        delegateDescriptorId: spec.delegateDescriptorId,
+        settings: JSON.stringify(spec.settings),
+        name: spec.name ?? `Custom condition (${spec.delegateDescriptorId})`,
+        negate: !!spec.negate,
+      };
+  }
 }
 
 export function rcCustomEventSettings(eventType: string): string {

@@ -25,6 +25,10 @@ import {
 import { createDevLibrary } from "./library.js";
 import { runFullValidation } from "./validation.js";
 import { config } from "../config.js";
+import type {
+  DataElementSelection,
+  PageLoadCondition,
+} from "./templates.js";
 
 // ── Types ───────────────────────────────────────────────────
 export interface SetupInput {
@@ -61,9 +65,33 @@ export interface SetupInput {
   pageNamePath?: string;
   crmIdPath?: string;
   includeOrderDes?: boolean;
+  /**
+   * v1.3 — categorical DE selection plus per-name overrides.
+   * Defaults: all categories on except orderTracking. Set categories
+   * to false to drop entire DE families (e.g. identity:false for sites
+   * with no authenticated users). Use overrides for fine control.
+   *
+   * Example:
+   *   { identity: false, overrides: { "Page - Type": true } }
+   *   → drops identity DEs but keeps Page-Type even though it lives
+   *     in pageContext (already on by default).
+   */
+  dataElementSelection?: DataElementSelection;
 
   // Rules
   renderDecisions?: boolean;
+  /** v1.3 — skip creating the page-load rule. Default true. */
+  includePageLoadRule?: boolean;
+  /**
+   * v1.3 — gate the page-load rule on common conditions (URL match,
+   * cookie, data-element value, domain). Multiple conditions are
+   * AND-ed. Omit for "fire on every page" (v1.2 default behavior).
+   *
+   * Example:
+   *   [{ kind: "url-matches", paths: [{ value: "/^/(?!account/)" }] }]
+   *   → fires everywhere EXCEPT /account/* pages.
+   */
+  pageLoadConditions?: PageLoadCondition[];
   includeOrderRule?: boolean;
   orderPagePath?: string;
 
@@ -253,6 +281,7 @@ export async function setupTargetWebsdk(
         input.crmIdPath ??
         "digitalData.user[0].profile[0].profileInfo.profileID",
       includeOrderDes: input.includeOrderDes ?? false,
+      selection: input.dataElementSelection,
     });
     result.data_elements_created = des.total;
     progress.push(
@@ -269,6 +298,8 @@ export async function setupTargetWebsdk(
       alloyExtensionId,
       coreExtensionId,
       renderDecisions: input.renderDecisions ?? true,
+      includePageLoadRule: input.includePageLoadRule ?? true,
+      pageLoadConditions: input.pageLoadConditions,
       includeOrderRule: input.includeOrderRule ?? false,
       orderPagePath: input.orderPagePath ?? "/order-confirmation",
     });

@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] - 2026-06-28
+
+The "consultant-grade page-load rule" release. Closes 7 of the 9 gaps identified in the v1.2 consultant audit. The two PDP-specific items (Library Loaded + Guided Events on the ecommerce archetype's PDP rule, plus configurable PDP path) are deferred to v1.4. **Tool count: 22 → 23.**
+
+### Added
+
+- **`sync_property_catalog` tool** — upgrade a property created under an older MCP version (v1.0/v1.1/v1.2) to the current standard catalog. Idempotently adds the DEs and rules that are missing; touches nothing already present. Use this when a property is missing v1.1's `Page - Type` or `Target - Send Event Data` DEs because it was set up before those existed in the catalog.
+- **Page-load rule conditions menu** — new `pageLoadConditions` orchestrator param accepts an array of typed condition specs. Compiled to the right Reactor descriptor + settings:
+  - `url-matches` → `core::conditions::path-and-querystring`
+  - `path-only` → `core::conditions::path`
+  - `cookie-equals` → `core::conditions::cookie`
+  - `domain-matches` → `core::conditions::domain`
+  - `subdomain-matches` → `core::conditions::subdomain`
+  - `data-element-equals` → `core::conditions::value-comparison`
+  - `raw` → escape hatch for any Reactor descriptor + settings
+  Each condition supports `negate`. All conditions are AND-ed on the rule. Confirmed live against core 3.4.4.
+- **`dataElementSelection` selection map** on `setup_target_websdk` and `sync_property_catalog`. Categorical defaults (`pageContext`, `identity`, `targetProfile`, `xdm`, `environment`, `orderTracking`) plus per-name `overrides`. Lets consultants drop DE families their site doesn't need without writing rule code.
+- **`includePageLoadRule: boolean`** orchestrator param (default `true`) — skip page-load rule creation entirely for sites managing the rule manually.
+
+### Changed — Consultant-grade page-load rule
+
+- **Trigger event: DOM Ready → Library Loaded (Page Top)**. Fires before DOM Ready so Target has a head start on personalization before pixels render. Significantly less flicker on personalized content.
+- **Send Event: manual config → Guided Events mode**. The page-load rule now uses Adobe's "Use Guided Events" with the `personalizationRequest` mode — fetches Target decisions without double-counting a page view in Analytics. Wire `xdm` and `data` via DE references as before; Adobe derives the `type` field internally.
+- **Data field wired to the `Target - Send Event Data` wrapper DE** by default. v1.1 created this DE but didn't reference it; v1.3 ensures the page-load rule's Send Event action actually passes profile attributes + mbox3rdPartyId to Target. Closes the "profile-based audience targeting silently fails" footgun.
+
+### Fixed
+
+- **Dot-notation in `Target - Profile Attributes` DE source code** — replaced bracket notation (`attrs["loyaltyStatus"]`) with dot notation (`attrs.loyaltyStatus`), eliminating the Reactor UI linter warnings. No functional change.
+
+### Not in this release (deferred to v1.4)
+
+- PDP rule (ecommerce archetype) Library Loaded + Guided Events conversion (item 4 in the audit) — defer
+- Configurable PDP path with `discover_site` integration (item 5) — defer
+
+These two are scoped together for v1.4 since they're PDP-specific.
+
+### Migration notes
+
+- **Backward compatible.** v1.2 callers using `includeOrderDes`, manual `flickerStyle`, etc. keep working unchanged. The new params have sensible defaults that match consultant best practice.
+- **Re-running `setup_target_websdk` on a v1.2 property won't update the existing page-load rule** (idempotency-by-name correctly skips it). To get v1.3's Library Loaded + Guided Events rule on a v1.2 property: delete the old rule in the Reactor UI, then run `sync_property_catalog`. Or use `setup_target_websdk` on a fresh property name.
+
+---
+
 ## [1.2.0] - 2026-06-27
 
 ### Added — Hosted HTTP deployment

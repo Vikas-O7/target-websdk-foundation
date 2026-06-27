@@ -31,13 +31,18 @@ import {
   websdkExtensionSettings,
   standardDataElements,
   rcDomReadySettings,
+  rcLibraryLoadedSettings,
   rcSendEventSettings,
+  rcGuidedSendEventSettings,
   rcSendPurchaseSettings,
   rcPathConditionSettings,
   rcCustomEventSettings,
   rcSpaSendEventSettings,
   CORE_DESCRIPTORS,
   ALLOY_DESCRIPTORS,
+  buildCondition,
+  type PageLoadCondition,
+  type DataElementSelection,
   ALLOY_CONFIG_DESCRIPTOR,
   type WebSdkSettingsInput,
 } from "./templates.js";
@@ -460,7 +465,17 @@ export interface CreateStandardDesInput {
   crmIdDataLayerPath: string;
   orderIdPath?: string;
   orderTotalPath?: string;
+  /**
+   * @deprecated v1.3 — prefer `selection.orderTracking`. Honored for
+   * backward compatibility.
+   */
   includeOrderDes?: boolean;
+  /**
+   * v1.3 selection map — categorical defaults plus per-name override.
+   * Lets consultants drop DE families their site doesn't need
+   * (e.g. identity off when there are no authenticated users).
+   */
+  selection?: DataElementSelection;
 }
 
 export async function createStandardDataElements(
@@ -476,6 +491,7 @@ export async function createStandardDataElements(
     orderIdPath: input.orderIdPath,
     orderTotalPath: input.orderTotalPath,
     includeOrderDes: input.includeOrderDes,
+    selection: input.selection,
   });
 
   // Discover existing DEs by name to avoid duplicates
@@ -544,6 +560,14 @@ export interface CreateStandardRulesInput {
   alloyExtensionId: string;
   coreExtensionId: string;
   renderDecisions?: boolean;
+  /** v1.3 — skip creating the page-load rule entirely. Default true. */
+  includePageLoadRule?: boolean;
+  /**
+   * v1.3 — conditions menu applied to the page-load rule. Each spec
+   * compiles to one rule_component (logical AND). Omit for "fire on
+   * every page" (the v1.2 default behavior).
+   */
+  pageLoadConditions?: PageLoadCondition[];
   includeOrderRule?: boolean;
   includeSpaRule?: boolean;
   includeClickRule?: boolean;
@@ -638,28 +662,59 @@ export async function createStandardRules(
     existingRules.map((r) => (r.attributes as { name?: string }).name ?? "")
   );
 
-  // Rule 1 — Page Load
+  // Rule 1 — Page Load (consultant-grade defaults as of v1.3)
+  // - Trigger: Library Loaded (Page Top) — fires before DOM Ready so
+  //   Target has a head start on personalization before pixels render.
+  // - Action: Send Event in Guided Events "Request Personalization" mode
+  //   — fetches Target decisions without double-counting a page-view in
+  //   Analytics (your Analytics extension owns the AA page-view).
+  // - Optional Conditions (input.pageLoadConditions) — gates the rule
+  //   on URL / cookie / data-element / domain. Falls back to no gating
+  //   (fires on every page) when none supplied.
   const r1Name = "All Pages - Target WebSDK - Page Load";
-  if (existingNames.has(r1Name)) {
+  if (input.includePageLoadRule === false) {
+    skipped.push({ name: r1Name, reason: "Disabled via includePageLoadRule:false" });
+  } else if (existingNames.has(r1Name)) {
     skipped.push({ name: r1Name, reason: "Already exists" });
   } else {
     const r1Id = await createRule(input.propertyId, r1Name);
     let comps = 0;
-    // Event: DOM Ready
+
+    // Event: Library Loaded (Page Top)
     await createOneRuleComponent(
       input.propertyId,
       ruleComponentBody({
         ruleId: r1Id,
         extensionId: input.coreExtensionId,
         componentType: "events",
-        delegateDescriptorId: CORE_DESCRIPTORS.dom_ready,
-        settings: rcDomReadySettings(),
-        name: "DOM Ready",
-        timeout: 2000,
+        delegateDescriptorId: CORE_DESCRIPTORS.library_loaded,
+        settings: rcLibraryLoadedSettings(),
+        name: "Library Loaded (Page Top)",
       })
     );
     comps++;
-    // Action: Send Event
+
+    // Conditions (optional, v1.3) — one rule_component per condition.
+    // Reactor uses the component's order to evaluate; conditions all
+    // need to pass before actions fire (logical AND).
+    for (const spec of input.pageLoadConditions ?? []) {
+      const built = buildCondition(spec);
+      await createOneRuleComponent(
+        input.propertyId,
+        ruleComponentBody({
+          ruleId: r1Id,
+          extensionId: input.coreExtensionId,
+          componentType: "conditions",
+          delegateDescriptorId: built.delegateDescriptorId,
+          settings: built.settings,
+          name: built.name,
+          negate: built.negate,
+        })
+      );
+      comps++;
+    }
+
+    // Action: Send Event — Guided Events / Request Personalization
     await createOneRuleComponent(
       input.propertyId,
       ruleComponentBody({
@@ -667,16 +722,13 @@ export async function createStandardRules(
         extensionId: input.alloyExtensionId,
         componentType: "actions",
         delegateDescriptorId: ALLOY_DESCRIPTORS.send_event,
-        settings: rcSendEventSettings(
-          "XDM - Page View",
-          "Target - Profile Attributes",
-          "Target - mbox3rdPartyId",
-          input.renderDecisions ?? true,
-          // v1.1: reference the Send Event Data wrapper DE so profile
-          // params + mbox3rdPartyId reach Target via the alloy data block.
-          "Target - Send Event Data"
-        ),
-        name: "Send Page View Event",
+        settings: rcGuidedSendEventSettings({
+          xdmDeName: "XDM - Page View",
+          mode: "personalizationRequest",
+          dataDeName: "Target - Send Event Data",
+          renderDecisions: input.renderDecisions ?? true,
+        }),
+        name: "Request Personalization",
       })
     );
     comps++;
