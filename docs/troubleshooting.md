@@ -130,19 +130,24 @@ If `test_edge_network` shows `target_responding: true` and you've deployed the e
 
 ## Known issues
 
-These have been verified on live tenants and are tracked for follow-up patches:
+There are no open known issues against the current release.
 
-### v1.1.0 — Duplicate development environment on re-run of `setup_target_websdk`
+### Legacy v1.0 properties may carry a duplicate Development env
 
-**Symptom**: After re-running `setup_target_websdk` against a property that already exists, the property may end up with two `development`-stage environments (e.g. `Development` and a duplicate `Development`).
+**Symptom**: A property created with v1.0 of this MCP can carry an extra `development`-stage environment from the original (non-idempotent) setup. Visible in the Tags UI as two `Development` rows; the orchestrator output collapses them and shows only one because `get_property_status` keys by stage.
 
-**Cause**: `setup_property_infrastructure`'s idempotency check matches existing environments by stage, but a race condition under certain Reactor API states allows a second `Development` env to be created when only one was expected.
+**Cause**: v1.0's `setup_property_infrastructure` POSTed environments without first listing existing ones, so a partial-failure re-run of `setup_target_websdk` would mint a second dev env. Fixed in **v1.1.0** by [`c976d72`](https://github.com/Vikas-O7/target-websdk-foundation/commit/c976d72) (`fix: make setup_target_websdk orchestrator fully idempotent`). v1.1+ correctly reuses existing envs and is safe to re-run.
 
-**Impact**: Cosmetic. The orchestrator still returns one of the two env IDs as `devEnvironmentId` for downstream calls, and `create_dev_library` will reuse whichever library is tied to that env. Both dev envs remain functional independently.
+**Detection**: v1.3.1+ emits a stderr warn log during `setup_target_websdk` re-runs whenever it finds more than one env per stage on a property:
 
-**Workaround**: Manually delete the duplicate dev env in the Tags UI (or via `DELETE /environments/{id}`). Use the dev env returned by the most recent orchestrator call.
+```
+[warn] Property PRxxx: 2 development-stage environments found.
+       Using oldest (ENaaa). Extras: ENbbb. These are likely artifacts
+       of a pre-v1.1 orchestrator bug — safe to delete via the Tags UI
+       or DELETE /environments/{id}.
+```
 
-**Fix**: Tracked in [issue (TODO)](https://github.com/Vikas-O7/target-websdk-foundation/issues). Will land in v1.1.1.
+**Cleanup**: The orchestrator deterministically picks the **oldest** dev env (by `created_at`) — that's the one your existing libraries are pinned to, so it's safe to leave running. Delete the newer duplicate(s) via the Tags UI (Environments → ⋯ → Delete) or via the Reactor API directly. Confirm no library references the env before deletion.
 
 ---
 

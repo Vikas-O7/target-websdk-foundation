@@ -26,6 +26,7 @@ import {
   type JsonApiSingleResponse,
 } from "./reactor-client.js";
 import { config } from "../config.js";
+import { log } from "../log.js";
 import {
   EXTENSION_PACKAGE_NAMES,
   websdkExtensionSettings,
@@ -255,13 +256,39 @@ export async function setupPropertyInfrastructure(
   // 2. Environments — fetch existing, then per stage either reuse or create.
   // Reactor allows only ONE environment per stage; creating a duplicate 409s
   // with "only one staging environment can be added to a property".
-  const existingEnvs = await reactorPaginate<{ stage?: string }>(
-    `/properties/${propertyId}/environments`
-  );
-  const envByStage = new Map<string, string>();
+  //
+  // Pre-v1.1 properties may carry duplicate environments from the v1.0
+  // orchestrator bug (PR #3 / c976d72 fixed forward; pre-existing duplicates
+  // are not auto-cleaned). When duplicates exist we deterministically pick
+  // the OLDEST env per stage (by created_at, ascending) so the same ID is
+  // returned across every re-run, and warn the user with the duplicate IDs.
+  const existingEnvs = await reactorPaginate<{
+    stage?: string;
+    created_at?: string;
+  }>(`/properties/${propertyId}/environments`);
+  const envsByStage = new Map<
+    string,
+    Array<{ id: string; createdAt: string }>
+  >();
   for (const e of existingEnvs) {
-    const stage = (e.attributes as { stage?: string }).stage;
-    if (stage) envByStage.set(stage, e.id);
+    const a = e.attributes as { stage?: string; created_at?: string };
+    if (!a.stage) continue;
+    const list = envsByStage.get(a.stage) ?? [];
+    list.push({ id: e.id, createdAt: a.created_at ?? "" });
+    envsByStage.set(a.stage, list);
+  }
+  const envByStage = new Map<string, string>();
+  for (const [stage, list] of envsByStage) {
+    list.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    envByStage.set(stage, list[0].id);
+    if (list.length > 1) {
+      const dupes = list.slice(1).map((d) => d.id).join(", ");
+      log.warn(
+        `Property ${propertyId}: ${list.length} ${stage}-stage environments found. ` +
+          `Using oldest (${list[0].id}). Extras: ${dupes}. ` +
+          `These are likely artifacts of a pre-v1.1 orchestrator bug — safe to delete via the Tags UI or DELETE /environments/{id}.`
+      );
+    }
   }
 
   const stages: Array<{ stage: "development" | "staging" | "production"; display: string }> = [
