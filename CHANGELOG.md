@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] - 2026-07-01
+
+The "at.js → Web SDK migration toolkit" release. Five new tools that turn an at.js site URL into a consultant-grade migration deliverable: analysis report, runbook, one-shot orchestrator, compatibility shim, and verification diff. Plus the first automated test suite (64 tests) and a CI gate on every push/PR. **Tool count: 23 → 28** across 9 groups.
+
+### Added — at.js migration toolkit
+
+- **`analyze_atjs_implementation`** — static-fetch analyzer specifically scoped to at.js sites. Detects at.js version (via versioned filename OR Reactor extension package marker `adobe-target-v2` for Tags-bundled deployments), parses `targetGlobalSettings` from inline HTML AND from the Tags bundle's `targetSettings:{...}` extension block, catalogs mboxes (declarative DOM + inline call sites + user-provided), classifies prehiding (whole-body vs scoped), detects A4T linkage, and returns a setting-by-setting at.js → Web SDK / Datastream mapping table with confidence levels. Augments via `knownMboxes` (network capture) and `targetGlobalSettings` (browser console). New `tags_bundle` follow-fetch handles the common enterprise pattern where at.js lives inside the Tags JS bundle, not the inline HTML.
+- **`generate_atjs_migration_runbook`** — composes the analyzer with a Markdown renderer to produce a consultant-grade migration deliverable (~18KB). 8 sections: executive summary with effort estimate and analysis confidence, current-state inventory, mapping table with confidence labels, concrete copy-pasteable `setup_target_websdk` call, 5-phase migration plan (Prepare → Create → Staging → Cutover → Cleanup), per-site decisions checklist, post-cutover verification checklist, raw-analysis appendix.
+- **`migrate_atjs_to_websdk`** — one-shot orchestrator. Defaults to `dryRun: true` (zero tenant writes) — returns the analysis + runbook + the EXACT `setup_target_websdk` parameters that would be sent. Set `dryRun: false` to actually create the Web SDK foundation. Refuse-to-run guards on missing client code and on migration blockers (e.g. at.js 1.x EOL) unless `forceBlockers: true`.
+- **`generate_atjs_compat_shim`** — generates a standalone runtime JS shim (~11KB, IIFE, no deps) that defines `window.adobe.target.*` (`getOffer`, `applyOffer`, `getOffers`, `applyOffers`, `trackEvent`, `triggerView`, `getOfferAndApply`) and routes every call through `alloy("sendEvent", ...)` under the hood. Lets large sites keep their existing at.js call sites working while the underlying delivery flips to Web SDK — the differentiator for sites that can't refactor hundreds of mbox call sites in one PR. Translates Web SDK propositions ↔ at.js offers (HTML/JSON/redirect/default schemas). Warns at runtime when called with a mbox not in the analyzer's catalog. `?target_shim_debug=1` URL flag enables verbose console logging.
+- **`diff_atjs_vs_websdk_implementation`** — cross-implementation verification. Takes the at.js URL + the Tags property ID and runs 9 checks comparing the two sides: Web SDK extension installed, datastream wired, Target service enabled, client code parity, domain coverage (with subdomain suffix-match), page-load Send Event rule present, A4T parity when expected, mbox strategy reminder, standard DE catalog completeness. Returns a graded report (A–F with severity-floored grading: any critical fail caps at F). Pure read — no tenant writes.
+
+### Added — Test infrastructure
+
+- **`tests/` directory populated** with 5 test files exercising every new v1.4 module — 64 tests across 21 suites, ~1.6s runtime. Uses Node's built-in `node:test` runner via `tsx --test`. Each suite spins up a local HTTP server with synthetic at.js fixtures (no live network dependencies); the compat-shim suite additionally executes the generated JS in a sandboxed `vm` context to verify runtime behavior. Pre-v1.4 the `tests/` directory existed but was empty — every assertion lived in scratchpad scripts that disappeared between sessions.
+- **CI gate on `npm test`** — `.github/workflows/ci.yml` now runs lint + build + test on every push to `main` and every pull request (Node 20 + 22 matrix). Hard rule #5 (`npm run build` must exit 0 before commit) is now enforced by GitHub Actions, not just by humans.
+
+### Schema-correction notes (discovered during live validation against paloaltonetworks.com)
+
+Four bugs the synthetic-fixture tests didn't catch — all surfaced during real-site validation against `paloaltonetworks.com` and fixed in this release:
+
+- **Tags-bundle follow-fetch is the common case.** Enterprise sites have at.js *inside* the Tags JS bundle, not the inline HTML. Analyzer initially reported "no at.js detected" on real sites. Fixed by adding bundle URL detection + follow-fetch when no inline at.js markers are present.
+- **Client-code regex was too loose.** Matched `cdn` from `cdn.tt.omtrdc.net` (legacy at.js CDN subdomain) instead of the real client code. Fixed by reordering priority: settings-dict → literal `clientCode:"..."` → subdomain `://CODE.tt.omtrdc.net` (with Adobe-infra subdomain blocklist).
+- **Minified-bundle version detection.** The `at.js-X.Y.Z` filename regex only matches the script-src case. Tags-bundled sites have `version:"2.11.7"` inside the bundle far from the `at.js` token. Fixed with Reactor extension package marker detection (`adobe-target-v2/` → 2.x; `adobe-target/` no -v2 → 1.x) and version-literal extraction from the parsed extension settings.
+- **Key-quoting regex mangled string contents.** The `objectLiteralToJson` converter's key-quoting regex matched `opacity:` inside `bodyHiddenStyle:"body {opacity: 0}"`, producing invalid JSON. Settings parser returned null on every minified bundle. Fixed with `transformOutsideStrings()` — a state-machine helper that applies regex transforms only outside string-literal contexts.
+
+### What's NOT in this release (and where it lives)
+
+- **Activity migration** — Adobe's official Target MCP covers this lane. The runbook output points to it explicitly when activity recreation is required (at.js 1.x clean-cutover).
+- **Real-tenant integration test for `migrate_atjs_to_websdk` with `dryRun: false`** — deferred. The dry-run path is exercised by the test suite; the live-create path depends on Adobe credentials and live tenant state. Manual validation against the `agsinternal` sandbox is the next step.
+- **JSDoc/JS migration consideration** — TypeScript remains. Trade-offs documented in the session HANDOVER.
+
+### Migration notes
+
+- **Fully backward-compatible.** No existing tool signatures or behavior changed. The 5 new tools are additive.
+- **`setup_target_websdk` is unchanged.** The new migration tools compose on top of the existing orchestrator.
+- **`tests/` was empty before v1.4** — there's no test-coverage regression to worry about; this release establishes the baseline.
+
+---
+
 ## [1.3.1] - 2026-06-29
 
 Hotfix closing out the long-standing v1.0 "duplicate Development environment" known issue. No new tools or features. **Tool count unchanged: 23.**
