@@ -32,3 +32,8 @@ npm-debug.log*
 .cache/
 *.tmp
 .vercel
+
+# Session continuity doc — intentionally local-only. Captures session
+# state, credential paths, and institutional knowledge that lives on the
+# maintainer's machine. Not committed.
+HANDOVER.md
