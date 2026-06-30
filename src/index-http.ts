@@ -43,8 +43,8 @@ import { registerDiscoveryTools } from "./tools/discovery-tools.js";
 import { registerArchetypeTools } from "./tools/archetype-tools.js";
 import { registerCatalogSyncTools } from "./tools/catalog-sync-tools.js";
 import { registerAtjsAnalysisTools } from "./tools/atjs-analysis-tools.js";
+import { VERSION } from "./version.js";
 
-const VERSION = "1.4.0";
 const SERVER_NAME = "target-websdk-foundation";
 
 // ── Per-request MCP server factory ──────────────────────────

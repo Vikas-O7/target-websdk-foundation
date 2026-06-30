@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.1] - 2026-07-01
+
+Hygiene release. No new tools, no behavior changes for end users. **Tool count unchanged: 28.**
+
+### Changed
+
+- **Reactor + Edge Metadata clients now enforce a 30s fetch timeout.** Both `reactorRequest` and `edgeMetadataRequest` wrap their `fetch` calls in an `AbortController` that fires at `timeoutMs` (default 30000, per-call override via the new `timeoutMs` option). On timeout the error message is explicit: `Reactor API GET /... timed out after 30000ms`. Previously a hung Adobe API response would block the MCP indefinitely with no diagnostic.
+- **VERSION is now read from `package.json` at module load.** New `src/version.ts` resolves `../package.json` via `fs.readFileSync` (TypeScript's `rootDir: "./src"` config blocks the JSON-import path; the fs approach works in both compiled `build/` and `tsx`-direct execution). Eliminates the 3-file-edit-per-release anti-pattern — bumping `package.json` is now sufficient.
+
+### Why this is two changes in one release
+
+Both are pure-hygiene quality-of-life improvements that landed in one session. Bundling them into a single PR/release keeps the release-cadence overhead low. Future releases should still prefer one substantive change per PR.
+
+---
+
 ## [1.4.0] - 2026-07-01
 
 The "at.js → Web SDK migration toolkit" release. Five new tools that turn an at.js site URL into a consultant-grade migration deliverable: analysis report, runbook, one-shot orchestrator, compatibility shim, and verification diff. Plus the first automated test suite (64 tests) and a CI gate on every push/PR. **Tool count: 23 → 28** across 9 groups.

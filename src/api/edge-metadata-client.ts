@@ -38,11 +38,17 @@ export const EDGE_METADATA_BASE =
 const UI_API_KEY = "Activation-DTM";
 
 const MAX_BODY_LOG_CHARS = 2000;
+// Default fetch timeout for Edge Metadata calls. Matches the Reactor
+// default — same reasoning: a hung response should fail fast with a
+// specific error rather than blocking the MCP indefinitely.
+const EDGE_DEFAULT_TIMEOUT_MS = 30_000;
 
 export interface EdgeMetadataRequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   params?: Record<string, string | number | boolean | undefined>;
+  /** Per-call override of the default 30s fetch timeout. */
+  timeoutMs?: number;
 }
 
 function formatEdgeErr(opts: {
@@ -81,7 +87,7 @@ export async function edgeMetadataRequest<T = unknown>(
   path: string,
   options: EdgeMetadataRequestOptions = {}
 ): Promise<T> {
-  const { method = "GET", body, params } = options;
+  const { method = "GET", body, params, timeoutMs = EDGE_DEFAULT_TIMEOUT_MS } = options;
   let token = await getAccessToken();
 
   const url = new URL(
@@ -103,17 +109,29 @@ export async function edgeMetadataRequest<T = unknown>(
   });
 
   const doFetch = async (tk: string): Promise<Response> => {
-    return fetch(url.toString(), {
-      method,
-      headers: buildHeaders(tk),
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url.toString(), {
+        method,
+        headers: buildHeaders(tk),
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   };
 
   let res: Response;
   try {
     res = await doFetch(token);
   } catch (networkErr) {
+    if ((networkErr as Error).name === "AbortError") {
+      throw new Error(
+        `Edge Metadata API ${method} ${url.toString()} timed out after ${timeoutMs}ms`
+      );
+    }
     throw new Error(
       `Network error calling Edge Metadata API ${method} ${url.toString()}: ${(networkErr as Error).message}`
     );
