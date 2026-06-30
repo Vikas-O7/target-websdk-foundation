@@ -35,8 +35,7 @@ import { registerDiscoveryTools } from "./tools/discovery-tools.js";
 import { registerArchetypeTools } from "./tools/archetype-tools.js";
 import { registerCatalogSyncTools } from "./tools/catalog-sync-tools.js";
 import { registerAtjsAnalysisTools } from "./tools/atjs-analysis-tools.js";
-
-const VERSION = "1.4.0";
+import { VERSION } from "./version.js";
 
 const server = new McpServer({
   name: "target-websdk-foundation",

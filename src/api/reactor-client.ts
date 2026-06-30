@@ -18,12 +18,21 @@ import { config } from "../config.js";
 // ── Constants ───────────────────────────────────────────────
 const REACTOR_BASE = "https://reactor.adobe.io";
 const MAX_BODY_LOG_CHARS = 2000;
+// Default fetch timeout for Reactor calls. Without this, a hung Adobe API
+// response would block the MCP indefinitely (the SDK has its own outer
+// timeout but enforcement at the API layer is cleaner + gives a specific
+// error message). 30s is generous — most Reactor calls return in <1s; the
+// slowest (library builds) have their own polling and never block this
+// path for more than the per-call HTTP round trip.
+const REACTOR_DEFAULT_TIMEOUT_MS = 30_000;
 
 // ── Types ───────────────────────────────────────────────────
 export interface ReactorRequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
   params?: Record<string, string | number | boolean | undefined>;
+  /** Per-call override of the default 30s fetch timeout. */
+  timeoutMs?: number;
 }
 
 export interface JsonApiResource<TAttrs = Record<string, unknown>> {
@@ -127,7 +136,7 @@ export async function reactorRequest<T = unknown>(
   path: string,
   options: ReactorRequestOptions = {}
 ): Promise<T> {
-  const { method = "GET", body, params } = options;
+  const { method = "GET", body, params, timeoutMs = REACTOR_DEFAULT_TIMEOUT_MS } = options;
   let token = await getAccessToken();
 
   const url = new URL(`${REACTOR_BASE}${path}`);
@@ -146,17 +155,31 @@ export async function reactorRequest<T = unknown>(
   });
 
   const doFetch = async (tk: string): Promise<Response> => {
-    return fetch(url.toString(), {
-      method,
-      headers: buildHeaders(tk),
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url.toString(), {
+        method,
+        headers: buildHeaders(tk),
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   };
 
   let res: Response;
   try {
     res = await doFetch(token);
   } catch (networkErr) {
+    // AbortError has name "AbortError" — surface as an explicit timeout
+    // error so the caller can distinguish it from a real network failure.
+    if ((networkErr as Error).name === "AbortError") {
+      throw new Error(
+        `Reactor API ${method} ${url.toString()} timed out after ${timeoutMs}ms`
+      );
+    }
     throw new Error(
       `Network error calling Reactor API ${method} ${url.toString()}: ${(networkErr as Error).message}`
     );
