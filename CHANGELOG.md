@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.1] - 2026-06-29
+
+Hotfix closing out the long-standing v1.0 "duplicate Development environment" known issue. No new tools or features. **Tool count unchanged: 23.**
+
+### Fixed
+
+- **Deterministic environment selection on re-run.** When `setup_target_websdk` re-runs against a property that has duplicate environments for a single stage (a v1.0 artifact — see context below), the orchestrator now picks the **oldest** environment per stage (sorted ascending by `created_at`) instead of relying on Reactor's undefined list order. Same env ID is returned across every re-run; libraries pinned to the older env aren't silently swapped to a duplicate.
+- **Duplicate-env warn log.** When `setupPropertyInfrastructure` detects more than one env per stage, it emits a stderr `warn` line listing the duplicate IDs and pointing the user at the manual cleanup path (Tags UI or `DELETE /environments/{id}`). Surfaces the polluted state instead of silently masking it.
+
+### Context — why this didn't need a behavior change
+
+Live re-validation against `agsinternal` on 2026-06-29 confirmed v1.1+ orchestrator code is already idempotent: re-running `setup_target_websdk` against a property with 3 canonical envs returns the same env IDs and creates nothing new. The duplicate state on the older `MCP-Validation-Luma-2026-06-22` test property was traced to commits prior to `c976d72` (`fix: make setup_target_websdk orchestrator fully idempotent`, 2026-06-22) where the env POST had no pre-flight check. The bug closed itself the day v1.1 shipped; the `troubleshooting.md` "tracked for v1.1.1" note was stale documentation.
+
+This release upgrades the dedup from "last-write-wins on an undefined-order list" to "explicit oldest-first," which is the deterministic version of the behavior that was already happening accidentally. Pre-existing duplicate envs on legacy properties are NOT auto-deleted (deletion is risky when libraries may be attached) — the warn log gives the user the info needed to clean them up manually.
+
+### Documentation
+
+- `docs/troubleshooting.md` "Known issues" section rewritten: the duplicate-dev-env bug is now documented as **fixed in v1.1.0**, with manual cleanup steps for any legacy property still carrying duplicate envs.
+- `HANDOVER.md` known-issues section updated accordingly.
+
+---
+
 ## [1.3.0] - 2026-06-28
 
 The "consultant-grade page-load rule" release. Closes 7 of the 9 gaps identified in the v1.2 consultant audit. The two PDP-specific items (Library Loaded + Guided Events on the ecommerce archetype's PDP rule, plus configurable PDP path) are deferred to v1.4. **Tool count: 22 → 23.**
